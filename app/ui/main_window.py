@@ -4,6 +4,11 @@ from PyQt5.QtWidgets import (
 )
 from services.config_service import ConfigService
 from services.path_validator import PathValidator
+from PyQt5.QtCore import QThread
+from core.upload_queue import UploadQueue
+from core.upload_worker import UploadWorker
+from pathlib import Path
+from core.upload_task import UploadTask
 
 
 CATEGORIES = [
@@ -28,6 +33,20 @@ class MainWindow(QWidget):
 
         self._init_ui()
         self._load_config()
+
+        self.upload_queue = UploadQueue()
+
+        self.upload_thread = QThread(self)
+        self.upload_worker = UploadWorker(self.upload_queue)
+        self.upload_worker.moveToThread(self.upload_thread)
+
+        # сигналы
+        self.upload_thread.started.connect(self.upload_worker.run)
+        self.upload_worker.signals.task_started.connect(self.on_task_started)
+        self.upload_worker.signals.task_finished.connect(self.on_task_finished)
+        self.upload_worker.signals.task_error.connect(self.on_task_error)
+
+        self.upload_thread.start()
 
     def _init_ui(self):
         layout = QVBoxLayout()
@@ -94,16 +113,21 @@ class MainWindow(QWidget):
         local_path = self.local_inputs[key].text()
         yadisk_path = self.yadisk_inputs[key].text()
 
-        if not self.validator.validate_local_path(local_path):
-            QMessageBox.critical(self, "Ошибка", "Локальный путь не существует")
-            return
+        # проверки уже есть — не повторяем
 
-        if not yadisk_path:
-            QMessageBox.critical(self, "Ошибка", "Не указан путь на Яндекс.Диске")
-            return
-
-        QMessageBox.information(
-            self,
-            "Загрузка",
-            f"Загрузка файлов из:\n{local_path}\n→ {yadisk_path}\n(пока заглушка)"
+        task = UploadTask(
+            local_path=Path(local_path),
+            yadisk_path=yadisk_path,
+            category=key
         )
+
+        self.upload_queue.add_task(task)
+
+    def on_task_started(self, task):
+        print(f"▶ Начата загрузка: {task.category}")
+
+    def on_task_finished(self, task):
+        print(f"✔ Загрузка завершена: {task.category}")
+
+    def on_task_error(self, task, message):
+        print(f"❌ Ошибка загрузки: {message}")
