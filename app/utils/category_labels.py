@@ -6,8 +6,8 @@
 CATEGORY_LABELS = {
     "raw_photos": "Исходные фото",
     "processed_photos": "Обработанные фото",
-    "raw_videos": "Исходные видео",
-    "processed_videos": "Обработанные видео",
+    "raw_video": "Исходные видео",
+    "processed_video": "Обработанные видео",
 }
 
 def get_category_label(category_key: str) -> str:

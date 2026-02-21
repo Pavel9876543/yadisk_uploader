@@ -1,0 +1,14 @@
+{
+  "local_paths": {
+    "processed_photos": "",
+    "raw_photos": "",
+    "processed_video": "",
+    "raw_video": ""
+  },
+  "yadisk_paths": {
+    "processed_photos": "/Медиатека/Богослужения",
+    "raw_photos": "/Медиатека/Богослужения",
+    "processed_video": "/Медиатека/Богослужения",
+    "raw_video": "/Медиатека/Богослужения"
+  }
+}
