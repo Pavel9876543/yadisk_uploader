@@ -53,14 +53,26 @@ class YadiskClient:
             ) from exc
 
     def upload_file(self, local_file: Path, yadisk_folder: str) -> None:
+        """
+        Загружает файл, если он не существует на Яндекс.Диске.
+
+        Возвращает:
+        - True  — файл загружен
+        - False — файл уже существует (пропущен)
+        """
         try:
             target_path = f"{yadisk_folder.rstrip('/')}/{local_file.name}"
+
+            # 🔹 ПРОВЕРКА СУЩЕСТВОВАНИЯ ФАЙЛА
+            if self.disk.exists(target_path):
+                return False
 
             self.disk.upload(
                 local_file.as_posix(),
                 target_path,
-                overwrite=True
+                overwrite=False
             )
+            return True
 
         except Exception as exc:
             raise RuntimeError(
@@ -71,8 +83,13 @@ class YadiskClient:
         self,
         local_folder: Path,
         yadisk_folder: str,
-        on_progress=None
+        on_progress=None,
+        on_skip=None
     ) -> None:
+        """
+        Загружает папку целиком.
+        Пропускает файлы, которые уже существуют на Яндекс.Диске.
+        """
         try:
             self.ensure_path(yadisk_folder)
 
@@ -85,11 +102,16 @@ class YadiskClient:
             uploaded_bytes = 0
 
             for file in files:
-                self.upload_file(file, yadisk_folder)
+                uploaded = self.upload_file(file, yadisk_folder)
 
-                uploaded_bytes += file.stat().st_size
-                if on_progress:
-                    on_progress(uploaded_bytes, total_bytes)
+                if uploaded:
+                    uploaded_bytes += file.stat().st_size
+                    if on_progress:
+                        on_progress(uploaded_bytes, total_bytes)
+                else:
+                    # 🔹 файл пропущен
+                    if on_skip:
+                        on_skip(file)
 
         except Exception:
             # ❗ НЕ глотаем — пробрасываем наверх

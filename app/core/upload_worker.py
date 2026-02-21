@@ -70,7 +70,8 @@ class UploadWorker(QObject):
             client.upload_folder(
                 local_folder=task.local_path,
                 yadisk_folder=task.yadisk_path,
-                on_progress=progress_callback
+                on_progress=lambda done, total:
+                self.signals.task_progress.emit(task, done, total)
             )
 
             task.status = TaskStatus.DONE
