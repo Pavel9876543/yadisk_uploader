@@ -16,54 +16,56 @@ class YadiskClient:
     """
 
     def __init__(self) -> None:
-        """
-        Инициализация клиента.
-        Токен берётся из .env
-        """
         load_dotenv()
         token = os.getenv("YANDEX_TOKEN")
 
         if not token:
-            raise RuntimeError("YANDEX_TOKEN не найден в .env")
+            raise RuntimeError("Не найден токен Яндекс.Диска (.env)")
 
-        self.disk = yadisk.YaDisk(token=token)
+        try:
+            self.disk = yadisk.YaDisk(token=token)
 
-        if not self.disk.check_token():
-            raise RuntimeError("Неверный YANDEX_TOKEN")
+            if not self.disk.check_token():
+                raise RuntimeError("Неверный токен Яндекс.Диска")
+
+        except Exception as exc:
+            # ❗ ВАЖНО: всё приводим к RuntimeError
+            raise RuntimeError(str(exc)) from exc
 
     def ensure_path(self, yadisk_path: str) -> None:
-        """
-        Гарантирует, что путь на Яндекс.Диске существует.
-        Создаёт все отсутствующие папки по цепочке.
+        try:
+            path = yadisk_path.strip().rstrip("/")
 
-        Пример:
-        /disk/media/photos/raw
-        """
-        # Нормализуем путь
-        path = yadisk_path.strip().rstrip("/")
+            if not path.startswith("/"):
+                path = "/" + path
 
-        if not path.startswith("/"):
-            path = "/" + path
+            parts = path.split("/")[1:]
+            current_path = ""
 
-        parts = path.split("/")[1:]  # без первого пустого элемента
-        current_path = ""
+            for part in parts:
+                current_path += f"/{part}"
+                if not self.disk.exists(current_path):
+                    self.disk.mkdir(current_path)
 
-        for part in parts:
-            current_path += f"/{part}"
-            if not self.disk.exists(current_path):
-                self.disk.mkdir(current_path)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Не удалось создать папку на Яндекс.Диске:\n{yadisk_path}"
+            ) from exc
 
     def upload_file(self, local_file: Path, yadisk_folder: str) -> None:
-        """
-        Загружает один файл на Яндекс.Диск.
-        """
-        target_path = f"{yadisk_folder.rstrip('/')}/{local_file.name}"
+        try:
+            target_path = f"{yadisk_folder.rstrip('/')}/{local_file.name}"
 
-        self.disk.upload(
-            local_file.as_posix(),
-            target_path,
-            overwrite=True
-        )
+            self.disk.upload(
+                local_file.as_posix(),
+                target_path,
+                overwrite=True
+            )
+
+        except Exception as exc:
+            raise RuntimeError(
+                f"Ошибка загрузки файла:\n{local_file.name}"
+            ) from exc
 
     def upload_folder(
         self,
@@ -71,27 +73,24 @@ class YadiskClient:
         yadisk_folder: str,
         on_progress=None
     ) -> None:
-        """
-        Загружает папку целиком.
-        Создаёт путь на Яндекс.Диске, если его нет.
-        """
+        try:
+            self.ensure_path(yadisk_folder)
 
-        # 1️⃣ Гарантируем, что путь существует
-        self.ensure_path(yadisk_folder)
+            files = [
+                f for f in local_folder.rglob("*")
+                if f.is_file()
+            ]
 
-        # 2️⃣ Собираем список файлов
-        files = [
-            f for f in local_folder.rglob("*")
-            if f.is_file()
-        ]
+            total_bytes = sum(f.stat().st_size for f in files)
+            uploaded_bytes = 0
 
-        total_bytes = sum(f.stat().st_size for f in files)
-        uploaded_bytes = 0
+            for file in files:
+                self.upload_file(file, yadisk_folder)
 
-        # 3️⃣ Загружаем файлы
-        for file in files:
-            self.upload_file(file, yadisk_folder)
+                uploaded_bytes += file.stat().st_size
+                if on_progress:
+                    on_progress(uploaded_bytes, total_bytes)
 
-            uploaded_bytes += file.stat().st_size
-            if on_progress:
-                on_progress(uploaded_bytes, total_bytes)
+        except Exception:
+            # ❗ НЕ глотаем — пробрасываем наверх
+            raise

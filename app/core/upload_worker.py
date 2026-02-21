@@ -60,7 +60,9 @@ class UploadWorker(QObject):
 
             def progress_callback(done, total):
                 if self._cancel_requested:
-                    raise RuntimeError("Загрузка прервана пользователем")
+                    task.status = TaskStatus.CANCELLED
+                    self.signals.task_cancelled.emit(task)
+                    return
 
                 self.signals.task_progress.emit(task, done, total)
 
@@ -74,14 +76,6 @@ class UploadWorker(QObject):
             self.signals.task_finished.emit(task)
 
         except Exception as exc:
-            if self._cancel_requested:
-                task.status = TaskStatus.CANCELLED
-                self.signals.task_cancelled.emit(task)
-            else:
-                task.status = TaskStatus.ERROR
-                self.signals.task_error.emit(task, str(exc))
-
-        except Exception as exc:
             task.status = TaskStatus.ERROR
-            task.error_message = str(exc)
-            self.signals.task_error.emit(task, task.error_message)
+
+            self.signals.task_error.emit(task, str(exc))

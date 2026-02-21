@@ -10,6 +10,7 @@ from core.upload_worker import UploadWorker
 from pathlib import Path
 from core.upload_task import UploadTask
 from PyQt5.QtWidgets import QProgressBar
+from utils.category_labels import get_category_label
 
 
 CATEGORIES = [
@@ -170,25 +171,68 @@ class MainWindow(QWidget):
         self.config_service.save(data)
         QMessageBox.information(self, "Успех", "Пути сохранены")
 
-    def _upload_clicked(self, key):
-        local_path = self.local_inputs[key].text()
-        yadisk_path = self.yadisk_inputs[key].text()
+    def _upload_clicked(self, category: str):
+        """
+        Обработчик кнопки «Отправить».
 
-        # проверки уже есть — не повторяем
+        Локальный путь:
+        - берётся ТОЛЬКО из поля GUI
+        - из config.json НЕ используется НИКОГДА
+        """
 
+        # 🔹 1. ЛОКАЛЬНЫЙ ПУТЬ — ТОЛЬКО ИЗ ПОЛЯ
+        local_path = self.local_inputs[category].text()
+
+        ok, error_message = PathValidator.validate_local_directory(local_path)
+        if not ok:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                error_message
+            )
+            return
+
+        # 🔹 2. ПУТЬ НА ЯНДЕКС.ДИСКЕ (поле → config)
+        yadisk_path_ui = self.yadisk_inputs[category].text().strip()
+
+        config = self.config_service.load()
+        yadisk_path_config = config["yadisk_paths"].get(category, "").strip()
+
+        yadisk_path = yadisk_path_ui or yadisk_path_config
+
+        if not yadisk_path:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                "Не указан путь для загрузки на Яндекс.Диск."
+            )
+            return
+
+        # 🔹 3. СОЗДАЁМ ЗАДАЧУ
         task = UploadTask(
             local_path=Path(local_path),
             yadisk_path=yadisk_path,
-            category=key
+            category=category
         )
 
+        upload_already_running = self.upload_in_progress
+
         self.upload_queue.add_task(task)
+        self.upload_signals.task_added.emit(task)
+
+        if upload_already_running:
+            QMessageBox.information(
+                self,
+                "Задача добавлена в очередь",
+                "Загрузка выполняется.\n"
+                "Выбранная папка добавлена в очередь."
+            )
 
     def on_task_started(self, task):
         self.upload_in_progress = True
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat(
-            f"Загрузка: {task.category} (%p%)"
+            f"Загрузка: {get_category_label(task.category)} (%p%)"
         )
 
     def on_task_progress(self, task, uploaded, total):
@@ -200,7 +244,7 @@ class MainWindow(QWidget):
 
         percent = int(uploaded / total * 100)
         self.progress_bar.setFormat(
-            f"{task.category}: {percent}% ({uploaded // 1024} / {total // 1024} KB)"
+            f"{get_category_label(task.category)}: {percent}% ({uploaded // 1024} / {total // 1024} KB)"
         )
 
     def on_task_finished(self, task):
@@ -211,7 +255,7 @@ class MainWindow(QWidget):
         QMessageBox.information(
             self,
             "Готово",
-            f"Загрузка категории «{task.category}» успешно завершена."
+            f"Загрузка категории «{get_category_label(task.category)}» успешно завершена."
         )
 
     def on_task_error(self, task, message):
@@ -221,7 +265,7 @@ class MainWindow(QWidget):
         QMessageBox.critical(
             self,
             "Ошибка загрузки",
-            f"Категория: {task.category}\n\n{message}"
+            f"Категория: {get_category_label(task.category)}\n\n{message}"
         )
 
     def on_task_cancelled(self, task):
