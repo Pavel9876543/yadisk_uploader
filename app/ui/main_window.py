@@ -9,6 +9,7 @@ from core.upload_queue import UploadQueue
 from core.upload_worker import UploadWorker
 from pathlib import Path
 from core.upload_task import UploadTask
+from PyQt5.QtWidgets import QProgressBar
 
 
 CATEGORIES = [
@@ -40,12 +41,46 @@ class MainWindow(QWidget):
         self.upload_worker = UploadWorker(self.upload_queue)
         self.upload_worker.moveToThread(self.upload_thread)
 
-        # сигналы
-        self.upload_thread.started.connect(self.upload_worker.run)
-        self.upload_worker.signals.task_started.connect(self.on_task_started)
-        self.upload_worker.signals.task_finished.connect(self.on_task_finished)
-        self.upload_worker.signals.task_error.connect(self.on_task_error)
+        # прогресс-бар
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("Ожидание загрузки…")
+        self.layout().addWidget(self.progress_bar)
 
+        self.upload_in_progress = False
+
+        # сигналы
+        self._init_upload_system()
+
+        self.upload_thread.start()
+
+    def _init_upload_system(self):
+        # 1️⃣ Очередь
+        self.upload_queue = UploadQueue()
+
+        # 2️⃣ Поток
+        self.upload_thread = QThread(self)
+
+        # 3️⃣ Worker
+        self.upload_worker = UploadWorker(self.upload_queue)
+        self.upload_worker.moveToThread(self.upload_thread)
+
+        # 4️⃣ Запуск worker
+        self.upload_thread.started.connect(self.upload_worker.run)
+
+        # 5️⃣ ПОДКЛЮЧЕНИЕ СИГНАЛОВ (ВОТ ЗДЕСЬ)
+        signals = self.upload_worker.signals
+
+        signals.task_started.connect(self.on_task_started)
+        signals.task_progress.connect(self.on_task_progress)
+        signals.task_finished.connect(self.on_task_finished)
+        signals.task_error.connect(self.on_task_error)
+
+        # (опционально)
+        # signals.queue_empty.connect(self.on_queue_empty)
+
+        # 6️⃣ Запуск потока
         self.upload_thread.start()
 
     def _init_ui(self):
@@ -90,6 +125,32 @@ class MainWindow(QWidget):
 
         self.setLayout(layout)
 
+    def closeEvent(self, event):
+        """
+        Корректное завершение приложения.
+        """
+        if self.upload_in_progress:
+            reply = QMessageBox.question(
+                self,
+                "Загрузка выполняется",
+                "Загрузка файлов ещё не завершена.\n"
+                "Прервать загрузку и выйти?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.No:
+                event.ignore()
+                return
+
+            # Пользователь согласился — останавливаем загрузку
+            self._shutdown_upload_system()
+
+        else:
+            self._shutdown_upload_system()
+
+        event.accept()
+
     def _select_local_path(self, key):
         path = QFileDialog.getExistingDirectory(self, "Выберите папку")
         if path:
@@ -124,10 +185,55 @@ class MainWindow(QWidget):
         self.upload_queue.add_task(task)
 
     def on_task_started(self, task):
-        print(f"▶ Начата загрузка: {task.category}")
+        self.upload_in_progress = True
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat(
+            f"Загрузка: {task.category} (%p%)"
+        )
+
+    def on_task_progress(self, task, uploaded, total):
+        if total == 0:
+            return
+
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(uploaded)
+
+        percent = int(uploaded / total * 100)
+        self.progress_bar.setFormat(
+            f"{task.category}: {percent}% ({uploaded // 1024} / {total // 1024} KB)"
+        )
 
     def on_task_finished(self, task):
-        print(f"✔ Загрузка завершена: {task.category}")
+        self.upload_in_progress = False
+        self.progress_bar.setValue(self.progress_bar.maximum())
+        self.progress_bar.setFormat("Загрузка завершена")
+
+        QMessageBox.information(
+            self,
+            "Готово",
+            f"Загрузка категории «{task.category}» успешно завершена."
+        )
 
     def on_task_error(self, task, message):
-        print(f"❌ Ошибка загрузки: {message}")
+        self.upload_in_progress = False
+        self.progress_bar.setFormat("Ошибка загрузки")
+
+        QMessageBox.critical(
+            self,
+            "Ошибка загрузки",
+            f"Категория: {task.category}\n\n{message}"
+        )
+
+    def on_task_cancelled(self, task):
+        self.upload_in_progress = False
+
+    def _shutdown_upload_system(self):
+        """
+        Быстрое завершение приложения без блокировки UI.
+        """
+        if self.upload_worker:
+            self.upload_worker.stop()
+
+        if self.upload_thread:
+            self.upload_thread.quit()
+            # ❗ НЕ wait()
