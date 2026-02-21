@@ -18,6 +18,8 @@ from core.upload_signals import UploadSignals
 
 from utils.category_labels import get_category_label
 
+from .help_dialog import HelpDialog
+
 
 CATEGORIES = [
     ("processed_photos", "Обработанные фото"),
@@ -121,6 +123,10 @@ class MainWindow(QWidget):
         btn_save.clicked.connect(self._save_paths)
         layout.addWidget(btn_save)
 
+        btn_save = QPushButton("Справка")
+        btn_save.clicked.connect(self._show_help)
+        layout.addWidget(btn_save)
+
         # Прогресс-бар
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
@@ -197,6 +203,13 @@ class MainWindow(QWidget):
             "Локальные пути сохранены.\n"
             "Базовые пути Яндекс.Диска обновлены."
         )
+
+    def _show_help(self):
+        """
+        Показывает окно со справкой.
+        """
+        dialog = HelpDialog(self)
+        dialog.exec_()
 
     def _extract_base_yadisk_path(self, full_path: str) -> str:
         """
