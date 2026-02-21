@@ -9,6 +9,7 @@ from .upload_queue import UploadQueue
 from .upload_task import UploadTask, TaskStatus
 from .upload_signals import UploadSignals
 from integrations.yadisk_client import YadiskClient
+from utils.logger import logger
 
 
 class UploadWorker(QObject):
@@ -77,5 +78,11 @@ class UploadWorker(QObject):
 
         except Exception as exc:
             task.status = TaskStatus.ERROR
+
+            # ✅ 1️⃣ ПОЛНЫЙ traceback В КОНСОЛЬ
+            logger.exception(
+                "Ошибка при загрузке категории %s",
+                task.category
+            )
 
             self.signals.task_error.emit(task, str(exc))

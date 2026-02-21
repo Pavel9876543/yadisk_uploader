@@ -11,6 +11,7 @@ from pathlib import Path
 from core.upload_task import UploadTask
 from PyQt5.QtWidgets import QProgressBar
 from utils.category_labels import get_category_label
+from core.upload_signals import UploadSignals
 
 
 CATEGORIES = [
@@ -51,7 +52,8 @@ class MainWindow(QWidget):
 
         self.upload_in_progress = False
 
-        # сигналы
+        self.upload_signals = UploadSignals()
+
         self._init_upload_system()
 
         self.upload_thread.start()
