@@ -1,17 +1,22 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QFileDialog, QMessageBox
+    QLineEdit, QPushButton, QFileDialog, QMessageBox, QProgressBar
 )
+from PyQt5.QtCore import QThread
+from pathlib import Path
+from datetime import datetime
+from pathlib import PurePosixPath
+
 from services.config_service import ConfigService
 from services.path_validator import PathValidator
-from PyQt5.QtCore import QThread
+from services.yadisk_path_builder import build_yadisk_path
+
 from core.upload_queue import UploadQueue
 from core.upload_worker import UploadWorker
-from pathlib import Path
 from core.upload_task import UploadTask
-from PyQt5.QtWidgets import QProgressBar
-from utils.category_labels import get_category_label
 from core.upload_signals import UploadSignals
+
+from utils.category_labels import get_category_label
 
 
 CATEGORIES = [
@@ -26,71 +31,59 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Yandex Disk Uploader")
-        self.resize(800, 400)
+        self.resize(800, 450)
 
+        # ─── СЕРВИСЫ ───────────────────────────────────────────────
         self.config_service = ConfigService()
         self.validator = PathValidator()
 
+        # ─── СОСТОЯНИЕ ─────────────────────────────────────────────
+        self.upload_in_progress = False
+        self.app_start_time = datetime.now()
+
+        # ─── ДАННЫЕ ────────────────────────────────────────────────
         self.local_inputs = {}
         self.yadisk_inputs = {}
+        self.final_yadisk_paths = {}
 
+        # ─── КОНФИГ (ОДИН РАЗ) ─────────────────────────────────────
+        self.config = self.config_service.load()
+
+        # ─── UI ────────────────────────────────────────────────────
         self._init_ui()
-        self._load_config()
+        self._init_final_yadisk_paths()
+        self._load_paths_from_config()
 
+        # ─── ЗАГРУЗКА ──────────────────────────────────────────────
         self.upload_queue = UploadQueue()
-
-        self.upload_thread = QThread(self)
-        self.upload_worker = UploadWorker(self.upload_queue)
-        self.upload_worker.moveToThread(self.upload_thread)
-
-        # прогресс-бар
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimum(0)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Ожидание загрузки…")
-        self.layout().addWidget(self.progress_bar)
-
-        self.upload_in_progress = False
-
         self.upload_signals = UploadSignals()
 
-        self._init_upload_system()
-
-        self.upload_thread.start()
-
-    def _init_upload_system(self):
-        # 1️⃣ Очередь
-        self.upload_queue = UploadQueue()
-
-        # 2️⃣ Поток
         self.upload_thread = QThread(self)
-
-        # 3️⃣ Worker
-        self.upload_worker = UploadWorker(self.upload_queue)
+        self.upload_worker = UploadWorker(
+            queue=self.upload_queue,
+            signals=self.upload_signals
+        )
         self.upload_worker.moveToThread(self.upload_thread)
 
-        # 4️⃣ Запуск worker
         self.upload_thread.started.connect(self.upload_worker.run)
 
-        # 5️⃣ ПОДКЛЮЧЕНИЕ СИГНАЛОВ (ВОТ ЗДЕСЬ)
-        signals = self.upload_worker.signals
+        self.upload_signals.task_started.connect(self.on_task_started)
+        self.upload_signals.task_progress.connect(self.on_task_progress)
+        self.upload_signals.task_finished.connect(self.on_task_finished)
+        self.upload_signals.task_error.connect(self.on_task_error)
+        self.upload_signals.task_cancelled.connect(self.on_task_cancelled)
 
-        signals.task_started.connect(self.on_task_started)
-        signals.task_progress.connect(self.on_task_progress)
-        signals.task_finished.connect(self.on_task_finished)
-        signals.task_error.connect(self.on_task_error)
-
-        # (опционально)
-        # signals.queue_empty.connect(self.on_queue_empty)
-
-        # 6️⃣ Запуск потока
         self.upload_thread.start()
+
+    # ==================================================================
+    # UI
+    # ==================================================================
 
     def _init_ui(self):
         layout = QVBoxLayout()
 
         for key, title in CATEGORIES:
-            layout.addWidget(QLabel(title))
+            layout.addWidget(QLabel(f"<b>{title}</b>"))
 
             # Локальный путь
             local_layout = QHBoxLayout()
@@ -113,6 +106,7 @@ class MainWindow(QWidget):
             # Путь Яндекс.Диска
             yadisk_layout = QHBoxLayout()
             yadisk_input = QLineEdit()
+
             yadisk_layout.addWidget(QLabel("Путь на Яндекс.Диске:"))
             yadisk_layout.addWidget(yadisk_input)
 
@@ -122,56 +116,112 @@ class MainWindow(QWidget):
             layout.addLayout(local_layout)
             layout.addLayout(yadisk_layout)
 
+        # Кнопка сохранения
         btn_save = QPushButton("Сохранить пути")
         btn_save.clicked.connect(self._save_paths)
         layout.addWidget(btn_save)
 
+        # Прогресс-бар
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("Ожидание загрузки…")
+        layout.addWidget(self.progress_bar)
+
         self.setLayout(layout)
 
-    def closeEvent(self, event):
+    # ==================================================================
+    # Пути
+    # ==================================================================
+
+    def _init_final_yadisk_paths(self):
         """
-        Корректное завершение приложения.
+        Формирует итоговые пути Яндекс.Диска (с датой)
+        ОДИН РАЗ при запуске приложения.
         """
-        if self.upload_in_progress:
-            reply = QMessageBox.question(
-                self,
-                "Загрузка выполняется",
-                "Загрузка файлов ещё не завершена.\n"
-                "Прервать загрузку и выйти?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+        yadisk_paths = self.config.get("yadisk_paths", {})
+
+        for category, base_path in yadisk_paths.items():
+            if not base_path or not isinstance(base_path, str):
+                continue
+
+            self.final_yadisk_paths[category] = build_yadisk_path(
+                base_path=base_path,
+                category=category,
+                now=self.app_start_time
             )
 
-            if reply == QMessageBox.No:
-                event.ignore()
-                return
+    def _load_paths_from_config(self):
+        """
+        Заполняет поля при запуске.
+        """
+        # Локальные пути
+        for category, path in self.config.get("local_paths", {}).items():
+            if category in self.local_inputs:
+                self.local_inputs[category].setText(path or "")
 
-            # Пользователь согласился — останавливаем загрузку
-            self._shutdown_upload_system()
-
-        else:
-            self._shutdown_upload_system()
-
-        event.accept()
-
-    def _select_local_path(self, key):
-        path = QFileDialog.getExistingDirectory(self, "Выберите папку")
-        if path:
-            self.local_inputs[key].setText(path)
-
-    def _load_config(self):
-        data = self.config_service.load()
-        for key in self.local_inputs:
-            self.local_inputs[key].setText(data["local_paths"].get(key, ""))
-            self.yadisk_inputs[key].setText(data["yadisk_paths"].get(key, ""))
+        # Пути Яндекс.Диска — УЖЕ С ДАТОЙ
+        for category, final_path in self.final_yadisk_paths.items():
+            if category in self.yadisk_inputs:
+                self.yadisk_inputs[category].setText(final_path)
 
     def _save_paths(self):
-        data = {
-            "local_paths": {k: self.local_inputs[k].text() for k in self.local_inputs},
-            "yadisk_paths": {k: self.yadisk_inputs[k].text() for k in self.yadisk_inputs},
+        """
+        Сохраняет пути в config.json.
+
+        - локальные пути — полностью
+        - пути Яндекс.Диска — ТОЛЬКО базовые (2 папки)
+        """
+
+        local_paths = {
+            k: self.local_inputs[k].text().strip()
+            for k in self.local_inputs
         }
+
+        yadisk_paths = {}
+        for k in self.yadisk_inputs:
+            full_path = self.yadisk_inputs[k].text().strip()
+            base_path = self._extract_base_yadisk_path(full_path)
+            yadisk_paths[k] = base_path
+
+        data = {
+            "local_paths": local_paths,
+            "yadisk_paths": yadisk_paths,
+        }
+
         self.config_service.save(data)
-        QMessageBox.information(self, "Успех", "Пути сохранены")
+
+        QMessageBox.information(
+            self,
+            "Успех",
+            "Локальные пути сохранены.\n"
+            "Базовые пути Яндекс.Диска обновлены."
+        )
+
+    def _extract_base_yadisk_path(self, full_path: str) -> str:
+        """
+        Из полного пути Яндекс.Диска оставляет
+        только первые две папки после корня.
+
+        /a/b/c/d -> /a/b
+        """
+        if not full_path:
+            return ""
+
+        # Нормализуем как POSIX
+        path = PurePosixPath(full_path)
+
+        parts = path.parts  # ('/', 'Медиатека', 'Богослужения', ...)
+
+        # Нужно минимум: / + 2 папки
+        if len(parts) < 3:
+            return full_path
+
+        return str(PurePosixPath(parts[0], parts[1], parts[2]))
+
+    # ==================================================================
+    # Загрузка
+    # ==================================================================
 
     def _upload_clicked(self, category: str):
         """
@@ -183,7 +233,7 @@ class MainWindow(QWidget):
         """
 
         # 🔹 1. ЛОКАЛЬНЫЙ ПУТЬ — ТОЛЬКО ИЗ ПОЛЯ
-        local_path = self.local_inputs[category].text()
+        local_path = self.local_inputs[category].text().strip()
 
         ok, error_message = PathValidator.validate_local_directory(local_path)
         if not ok:
@@ -194,13 +244,8 @@ class MainWindow(QWidget):
             )
             return
 
-        # 🔹 2. ПУТЬ НА ЯНДЕКС.ДИСКЕ (поле → config)
-        yadisk_path_ui = self.yadisk_inputs[category].text().strip()
-
-        config = self.config_service.load()
-        yadisk_path_config = config["yadisk_paths"].get(category, "").strip()
-
-        yadisk_path = yadisk_path_ui or yadisk_path_config
+        # 🔹 2. ПУТЬ НА ЯНДЕКС.ДИСКЕ (поле)
+        yadisk_path = self.yadisk_inputs[category].text().strip()
 
         if not yadisk_path:
             QMessageBox.critical(
@@ -229,6 +274,10 @@ class MainWindow(QWidget):
                 "Загрузка выполняется.\n"
                 "Выбранная папка добавлена в очередь."
             )
+
+    # ==================================================================
+    # Сигналы
+    # ==================================================================
 
     def on_task_started(self, task):
         self.upload_in_progress = True
@@ -273,13 +322,38 @@ class MainWindow(QWidget):
     def on_task_cancelled(self, task):
         self.upload_in_progress = False
 
+    # ==================================================================
+    # Закрытие
+    # ==================================================================
+
+    def closeEvent(self, event):
+        if self.upload_in_progress:
+            reply = QMessageBox.question(
+                self,
+                "Загрузка выполняется",
+                "Загрузка файлов ещё не завершена.\n"
+                "Прервать загрузку и выйти?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.No:
+                event.ignore()
+                return
+
+        self._shutdown_upload_system()
+        event.accept()
+
     def _shutdown_upload_system(self):
-        """
-        Быстрое завершение приложения без блокировки UI.
-        """
         if self.upload_worker:
             self.upload_worker.stop()
-
         if self.upload_thread:
             self.upload_thread.quit()
-            # ❗ НЕ wait()
+
+    # ==================================================================
+    # Вспомогательные
+    # ==================================================================
+
+    def _select_local_path(self, key):
+        path = QFileDialog.getExistingDirectory(self, "Выберите папку")
+        if path:
+            self.local_inputs[key].setText(path)

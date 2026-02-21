@@ -17,10 +17,10 @@ class UploadWorker(QObject):
     Worker для выполнения задач загрузки в отдельном потоке.
     """
 
-    def __init__(self, queue: UploadQueue):
+    def __init__(self, queue: UploadQueue, signals):
         super().__init__()
         self.queue = queue
-        self.signals = UploadSignals()
+        self.signals = signals
         self._running = True
         self._cancel_requested = False
 
