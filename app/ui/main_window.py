@@ -74,6 +74,7 @@ class MainWindow(QWidget):
         self.upload_signals.task_finished.connect(self.on_task_finished)
         self.upload_signals.task_error.connect(self.on_task_error)
         self.upload_signals.task_cancelled.connect(self.on_task_cancelled)
+        self.upload_signals.queue_empty.connect(self.on_queue_empty)
 
         self.upload_thread.start()
 
@@ -295,6 +296,7 @@ class MainWindow(QWidget):
     def on_task_started(self, task):
         self.upload_in_progress = True
         self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(100)
         self.progress_bar.setFormat(
             f"Загрузка: {get_category_label(task.category)} (%p%)"
         )
@@ -312,7 +314,6 @@ class MainWindow(QWidget):
         )
 
     def on_task_finished(self, task):
-        self.upload_in_progress = False
         self.progress_bar.setValue(self.progress_bar.maximum())
         self.progress_bar.setFormat("Загрузка завершена")
 
@@ -323,7 +324,6 @@ class MainWindow(QWidget):
         )
 
     def on_task_error(self, task, message):
-        self.upload_in_progress = False
         self.progress_bar.setFormat("Ошибка загрузки")
 
         QMessageBox.critical(
@@ -333,6 +333,9 @@ class MainWindow(QWidget):
         )
 
     def on_task_cancelled(self, task):
+        self.progress_bar.setFormat("Загрузка прервана")
+
+    def on_queue_empty(self):
         self.upload_in_progress = False
 
     # ==================================================================
@@ -359,8 +362,10 @@ class MainWindow(QWidget):
     def _shutdown_upload_system(self):
         if self.upload_worker:
             self.upload_worker.stop()
+        self.upload_queue.clear()
         if self.upload_thread:
             self.upload_thread.quit()
+            self.upload_thread.wait(3000)
 
     # ==================================================================
     # Вспомогательные

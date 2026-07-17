@@ -4,9 +4,15 @@
 """
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Callable
+
 from dotenv import load_dotenv
 import yadisk
+
+
+class UploadCancelled(RuntimeError):
+    """Raised when the user asks to stop the current upload."""
 
 
 class YadiskClient:
@@ -32,12 +38,17 @@ class YadiskClient:
             # ❗ ВАЖНО: всё приводим к RuntimeError
             raise RuntimeError(str(exc)) from exc
 
-    def ensure_path(self, yadisk_path: str) -> None:
-        try:
-            path = yadisk_path.strip().rstrip("/")
+    def _normalize_yadisk_path(self, yadisk_path: str) -> str:
+        path = yadisk_path.strip().rstrip("/")
+        if not path:
+            raise RuntimeError("Не указан путь на Яндекс.Диске")
+        if not path.startswith("/"):
+            path = "/" + path
+        return path
 
-            if not path.startswith("/"):
-                path = "/" + path
+    def ensure_path(self, yadisk_path: str) -> str:
+        try:
+            path = self._normalize_yadisk_path(yadisk_path)
 
             parts = path.split("/")[1:]
             current_path = ""
@@ -47,12 +58,14 @@ class YadiskClient:
                 if not self.disk.exists(current_path):
                     self.disk.mkdir(current_path)
 
+            return path
+
         except Exception as exc:
             raise RuntimeError(
                 f"Не удалось создать папку на Яндекс.Диске:\n{yadisk_path}"
             ) from exc
 
-    def upload_file(self, local_file: Path, yadisk_folder: str) -> None:
+    def upload_file(self, local_file: Path, target_path: str) -> bool:
         """
         Загружает файл, если он не существует на Яндекс.Диске.
 
@@ -61,9 +74,6 @@ class YadiskClient:
         - False — файл уже существует (пропущен)
         """
         try:
-            target_path = f"{yadisk_folder.rstrip('/')}/{local_file.name}"
-
-            # 🔹 ПРОВЕРКА СУЩЕСТВОВАНИЯ ФАЙЛА
             if self.disk.exists(target_path):
                 return False
 
@@ -79,19 +89,30 @@ class YadiskClient:
                 f"Ошибка загрузки файла:\n{local_file.name}"
             ) from exc
 
+    def _target_path(
+        self,
+        local_folder: Path,
+        local_file: Path,
+        yadisk_folder: str
+    ) -> str:
+        relative_path = local_file.relative_to(local_folder).as_posix()
+        return f"{yadisk_folder.rstrip('/')}/{relative_path}"
+
     def upload_folder(
         self,
         local_folder: Path,
         yadisk_folder: str,
         on_progress=None,
-        on_skip=None
+        on_skip=None,
+        should_cancel: Callable[[], bool] | None = None
     ) -> None:
         """
         Загружает папку целиком.
         Пропускает файлы, которые уже существуют на Яндекс.Диске.
+        Сохраняет структуру вложенных подпапок.
         """
         try:
-            self.ensure_path(yadisk_folder)
+            yadisk_folder = self.ensure_path(yadisk_folder)
 
             files = [
                 f for f in local_folder.rglob("*")
@@ -102,17 +123,27 @@ class YadiskClient:
             uploaded_bytes = 0
 
             for file in files:
-                uploaded = self.upload_file(file, yadisk_folder)
+                if should_cancel and should_cancel():
+                    raise UploadCancelled("Загрузка прервана пользователем")
 
-                if uploaded:
-                    uploaded_bytes += file.stat().st_size
-                    if on_progress:
-                        on_progress(uploaded_bytes, total_bytes)
-                else:
-                    # 🔹 файл пропущен
+                file_size = file.stat().st_size
+                target_path = self._target_path(
+                    local_folder,
+                    file,
+                    yadisk_folder
+                )
+                target_folder = str(PurePosixPath(target_path).parent)
+                self.ensure_path(target_folder)
+
+                uploaded = self.upload_file(file, target_path)
+
+                if not uploaded:
                     if on_skip:
                         on_skip(file)
 
+                uploaded_bytes += file_size
+                if on_progress:
+                    on_progress(uploaded_bytes, total_bytes)
+
         except Exception:
-            # ❗ НЕ глотаем — пробрасываем наверх
             raise

@@ -17,10 +17,16 @@ def translate_exception(exc: Exception) -> str:
     if isinstance(exc, yadisk.exceptions.UnauthorizedError):
         return "Ошибка авторизации. Проверьте токен Яндекс.Диска."
 
-    if isinstance(exc, RuntimeError):
+    if isinstance(exc, RuntimeError) and "Не найден токен" in str(exc):
+        return "Не найден токен Яндекс.Диска. Проверьте переменную YANDEX_TOKEN в файле .env."
+
+    if isinstance(exc, RuntimeError) and "Неверный токен" in str(exc):
+        return "Неверный токен Яндекс.Диска. Проверьте значение YANDEX_TOKEN."
+
+    if isinstance(exc, RuntimeError) and "Не удалось создать папку" in str(exc):
         return (
-            "Указанный путь на Яндекс.Диске не существует.\n"
-            "Проверьте правильность пути в настройках."
+            "Не удалось создать папку на Яндекс.Диске.\n"
+            "Проверьте путь и права доступа."
         )
 
     if isinstance(exc, yadisk.exceptions.ForbiddenError):

@@ -8,8 +8,9 @@ from time import sleep
 from .upload_queue import UploadQueue
 from .upload_task import UploadTask, TaskStatus
 from .upload_signals import UploadSignals
-from integrations.yadisk_client import YadiskClient
+from integrations.yadisk_client import YadiskClient, UploadCancelled
 from utils.logger import logger
+from utils.error_translator import translate_exception
 
 
 class UploadWorker(QObject):
@@ -46,44 +47,38 @@ class UploadWorker(QObject):
 
             self._process_task(task)
 
-    def stop(self):
-        """
-        Останавливает worker.
-        """
-        self._running = False
-
     def _process_task(self, task):
         try:
+            self._cancel_requested = False
             task.status = TaskStatus.IN_PROGRESS
             self.signals.task_started.emit(task)
 
             client = YadiskClient()
 
             def progress_callback(done, total):
-                if self._cancel_requested:
-                    task.status = TaskStatus.CANCELLED
-                    self.signals.task_cancelled.emit(task)
-                    return
-
                 self.signals.task_progress.emit(task, done, total)
 
             client.upload_folder(
                 local_folder=task.local_path,
                 yadisk_folder=task.yadisk_path,
-                on_progress=lambda done, total:
-                self.signals.task_progress.emit(task, done, total)
+                on_progress=progress_callback,
+                should_cancel=lambda: self._cancel_requested
             )
 
             task.status = TaskStatus.DONE
             self.signals.task_finished.emit(task)
 
+        except UploadCancelled:
+            task.status = TaskStatus.CANCELLED
+            self.signals.task_cancelled.emit(task)
+
         except Exception as exc:
             task.status = TaskStatus.ERROR
+            task.error_message = translate_exception(exc)
 
-            # ✅ 1️⃣ ПОЛНЫЙ traceback В КОНСОЛЬ
             logger.exception(
                 "Ошибка при загрузке категории %s",
                 task.category
             )
 
-            self.signals.task_error.emit(task, str(exc))
+            self.signals.task_error.emit(task, task.error_message)
