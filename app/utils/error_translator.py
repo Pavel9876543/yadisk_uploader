@@ -4,81 +4,161 @@
 
 import socket
 import ssl
-import requests
+
 import yadisk
 from requests.exceptions import ProxyError, ConnectionError, Timeout
+
+
+def _exception_chain(exc: Exception):
+    current = exc
+    seen = set()
+
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        current = current.__cause__ or current.__context__
+
+
+def _has_message(exc: Exception, text: str) -> bool:
+    return any(text in str(item) for item in _exception_chain(exc))
+
+
+def _has_type(exc: Exception, types) -> bool:
+    return any(isinstance(item, types) for item in _exception_chain(exc))
 
 
 def translate_exception(exc: Exception) -> str:
     """
     Преобразует исключение в человеко-читаемое сообщение.
+    Учитывает исходную причину, даже если ошибка была обёрнута выше.
     """
-    # 🔹 Яндекс.Диск
-    if isinstance(exc, yadisk.exceptions.UnauthorizedError):
+    if _has_message(exc, "Загрузка прервана пользователем"):
+        return "Загрузка была прервана пользователем."
+
+    # Авторизация / токен
+    if _has_type(exc, yadisk.exceptions.UnauthorizedError):
         return "Ошибка авторизации. Проверьте токен Яндекс.Диска."
 
-    if isinstance(exc, RuntimeError) and "Не найден токен" in str(exc):
+    if _has_message(exc, "Не найден токен"):
         return "Не найден токен Яндекс.Диска. Проверьте переменную YANDEX_TOKEN в файле .env."
 
-    if isinstance(exc, RuntimeError) and "Неверный токен" in str(exc):
+    if _has_message(exc, "Неверный токен"):
         return "Неверный токен Яндекс.Диска. Проверьте значение YANDEX_TOKEN."
 
-    if isinstance(exc, RuntimeError) and "Не удалось создать папку" in str(exc):
-        return (
-            "Не удалось создать папку на Яндекс.Диске.\n"
-            "Проверьте путь и права доступа."
-        )
-
-    if isinstance(exc, yadisk.exceptions.ForbiddenError):
+    # Права и лимиты Яндекс.Диска
+    if _has_type(exc, yadisk.exceptions.ForbiddenError):
         return (
             "Недостаточно прав для записи в указанную папку "
             "на Яндекс.Диске."
         )
 
-    if isinstance(exc, yadisk.exceptions.ConflictError):
+    if _has_type(exc, yadisk.exceptions.InsufficientStorageError):
+        return "На Яндекс.Диске недостаточно свободного места."
+
+    if _has_type(exc, yadisk.exceptions.UploadTrafficLimitExceededError):
         return (
-            "Конфликт при загрузке файла.\n"
-            "Возможно, файл уже используется или заблокирован."
+            "Превышен лимит загрузки на Яндекс.Диск.\n"
+            "Попробуйте повторить загрузку позже."
         )
 
-    # 🔹 Сеть / прокси / SSL
-    if isinstance(exc, ProxyError):
+    if _has_type(exc, yadisk.exceptions.TooManyRequestsError):
+        return (
+            "Яндекс.Диск временно ограничил частоту запросов.\n"
+            "Подождите немного и повторите загрузку."
+        )
+
+    # Сеть / прокси / SSL
+    if _has_type(exc, ProxyError):
         return (
             "Ошибка подключения через прокси.\n"
             "Проверьте настройки прокси или отключите его."
         )
 
-    if isinstance(exc, (ConnectionError, Timeout, socket.timeout)):
+    if _has_type(exc, (
+        ConnectionError,
+        Timeout,
+        socket.timeout,
+        yadisk.exceptions.YaDiskConnectionError,
+        yadisk.exceptions.RequestTimeoutError,
+    )):
         return (
             "Не удалось подключиться к Яндекс.Диску.\n"
             "Проверьте интернет-соединение."
         )
 
-    if isinstance(exc, ssl.SSLError):
+    if _has_type(exc, ssl.SSLError):
         return (
             "Ошибка SSL-соединения.\n"
             "Возможно, используется корпоративный прокси "
             "или антивирус с перехватом трафика."
         )
 
-    # 🔹 Файловая система
-    if isinstance(exc, FileNotFoundError):
+    if _has_type(exc, yadisk.exceptions.RetriableYaDiskError):
+        return (
+            "Яндекс.Диск временно недоступен.\n"
+            "Повторите загрузку позже."
+        )
+
+    # Пути и файлы
+    if _has_type(exc, (
+        yadisk.exceptions.PathNotFoundError,
+        yadisk.exceptions.ParentNotFoundError,
+        yadisk.exceptions.NotFoundError,
+    )):
+        return (
+            "Путь на Яндекс.Диске не найден.\n"
+            "Проверьте папку назначения."
+        )
+
+    if _has_message(exc, "Не указан путь на Яндекс.Диске"):
+        return "Не указан путь для загрузки на Яндекс.Диск."
+
+    if _has_message(exc, "Не удалось создать папку"):
+        return (
+            "Не удалось создать папку на Яндекс.Диске.\n"
+            "Проверьте путь и права доступа."
+        )
+
+    if _has_type(exc, FileNotFoundError):
         return (
             "Файл или папка не найдены.\n"
             "Возможно, они были удалены во время загрузки."
         )
 
-    if isinstance(exc, PermissionError):
+    if _has_type(exc, PermissionError):
         return (
             "Нет доступа к файлу или папке.\n"
             "Проверьте права доступа."
         )
 
-    # 🔹 Отмена пользователем
-    if str(exc) == "Загрузка прервана пользователем":
-        return "Загрузка была прервана пользователем."
+    # Конфликты ресурсов
+    if _has_type(exc, (
+        yadisk.exceptions.ResourceIsLockedError,
+        yadisk.exceptions.LockedError,
+    )):
+        return (
+            "Файл или папка на Яндекс.Диске временно заблокированы.\n"
+            "Повторите загрузку позже."
+        )
 
-    # 🔹 Фолбэк
+    if _has_type(exc, yadisk.exceptions.ConflictError):
+        return (
+            "Конфликт при загрузке файла.\n"
+            "Проверьте, не изменяется ли эта папка одновременно в другом месте."
+        )
+
+    if _has_type(exc, yadisk.exceptions.PayloadTooLargeError):
+        return (
+            "Файл слишком большой для загрузки этим способом.\n"
+            "Попробуйте загрузить его отдельно."
+        )
+
+    if _has_message(exc, "Ошибка загрузки файла"):
+        return (
+            "Не удалось загрузить один из файлов.\n"
+            "Проверьте доступ к файлу и повторите загрузку."
+        )
+
     return (
         "Произошла непредвиденная ошибка.\n\n"
         f"Техническая информация:\n{str(exc)}"

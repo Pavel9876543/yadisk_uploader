@@ -47,6 +47,7 @@ class MainWindow(QWidget):
         self.local_inputs = {}
         self.yadisk_inputs = {}
         self.final_yadisk_paths = {}
+        self.upload_buttons = {}
 
         # ─── КОНФИГ (ОДИН РАЗ) ─────────────────────────────────────
         self.config = self.config_service.load()
@@ -74,7 +75,6 @@ class MainWindow(QWidget):
         self.upload_signals.task_finished.connect(self.on_task_finished)
         self.upload_signals.task_error.connect(self.on_task_error)
         self.upload_signals.task_cancelled.connect(self.on_task_cancelled)
-        self.upload_signals.queue_empty.connect(self.on_queue_empty)
 
         self.upload_thread.start()
 
@@ -115,6 +115,7 @@ class MainWindow(QWidget):
 
             self.local_inputs[key] = local_input
             self.yadisk_inputs[key] = yadisk_input
+            self.upload_buttons[key] = btn_upload
 
             layout.addLayout(local_layout)
             layout.addLayout(yadisk_layout)
@@ -245,6 +246,14 @@ class MainWindow(QWidget):
         - берётся ТОЛЬКО из поля GUI
         - из config.json НЕ используется НИКОГДА
         """
+        if self.upload_in_progress:
+            QMessageBox.warning(
+                self,
+                "Загрузка уже выполняется",
+                "Дождитесь завершения текущей загрузки.\n"
+                "Новые папки в очередь не добавляются."
+            )
+            return
 
         # 🔹 1. ЛОКАЛЬНЫЙ ПУТЬ — ТОЛЬКО ИЗ ПОЛЯ
         local_path = self.local_inputs[category].text().strip()
@@ -276,18 +285,14 @@ class MainWindow(QWidget):
             category=category
         )
 
-        upload_already_running = self.upload_in_progress
+        self.upload_in_progress = True
+        self._set_upload_controls_enabled(False)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("Подготовка загрузки…")
 
         self.upload_queue.add_task(task)
         self.upload_signals.task_added.emit(task)
-
-        if upload_already_running:
-            QMessageBox.information(
-                self,
-                "Задача добавлена в очередь",
-                "Загрузка выполняется.\n"
-                "Выбранная папка добавлена в очередь."
-            )
 
     # ==================================================================
     # Сигналы
@@ -295,6 +300,7 @@ class MainWindow(QWidget):
 
     def on_task_started(self, task):
         self.upload_in_progress = True
+        self._set_upload_controls_enabled(False)
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setFormat(
@@ -316,6 +322,7 @@ class MainWindow(QWidget):
     def on_task_finished(self, task):
         self.progress_bar.setValue(self.progress_bar.maximum())
         self.progress_bar.setFormat("Загрузка завершена")
+        self._finish_current_upload()
 
         QMessageBox.information(
             self,
@@ -325,6 +332,7 @@ class MainWindow(QWidget):
 
     def on_task_error(self, task, message):
         self.progress_bar.setFormat("Ошибка загрузки")
+        self._finish_current_upload()
 
         QMessageBox.critical(
             self,
@@ -334,9 +342,7 @@ class MainWindow(QWidget):
 
     def on_task_cancelled(self, task):
         self.progress_bar.setFormat("Загрузка прервана")
-
-    def on_queue_empty(self):
-        self.upload_in_progress = False
+        self._finish_current_upload()
 
     # ==================================================================
     # Закрытие
@@ -363,6 +369,7 @@ class MainWindow(QWidget):
         if self.upload_worker:
             self.upload_worker.stop()
         self.upload_queue.clear()
+        self._finish_current_upload()
         if self.upload_thread:
             self.upload_thread.quit()
             self.upload_thread.wait(3000)
@@ -375,3 +382,11 @@ class MainWindow(QWidget):
         path = QFileDialog.getExistingDirectory(self, "Выберите папку")
         if path:
             self.local_inputs[key].setText(path)
+
+    def _set_upload_controls_enabled(self, enabled: bool):
+        for button in self.upload_buttons.values():
+            button.setEnabled(enabled)
+
+    def _finish_current_upload(self):
+        self.upload_in_progress = False
+        self._set_upload_controls_enabled(True)
