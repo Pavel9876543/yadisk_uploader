@@ -1,8 +1,9 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QFileDialog, QMessageBox, QProgressBar
+    QLineEdit, QPushButton, QFileDialog, QMessageBox, QProgressBar,
+    QFrame, QGridLayout, QScrollArea, QSizePolicy, QStyle
 )
-from PyQt5.QtCore import QThread
+from PyQt5.QtCore import QThread, Qt, QSize
 from pathlib import Path
 from datetime import datetime
 from pathlib import PurePosixPath
@@ -28,12 +29,20 @@ CATEGORIES = [
     ("raw_video", "Исходные видео"),
 ]
 
+CATEGORY_ACCENTS = {
+    "processed_photos": "#2f8f83",
+    "raw_photos": "#b28d2d",
+    "processed_video": "#3662a3",
+    "raw_video": "#c75c38",
+}
+
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Yandex Disk Uploader")
-        self.resize(800, 450)
+        self.resize(1040, 720)
+        self.setMinimumSize(880, 620)
 
         # ─── СЕРВИСЫ ───────────────────────────────────────────────
         self.config_service = ConfigService()
@@ -48,6 +57,8 @@ class MainWindow(QWidget):
         self.yadisk_inputs = {}
         self.final_yadisk_paths = {}
         self.upload_buttons = {}
+        self.category_panels = {}
+        self.category_status_labels = {}
 
         # ─── КОНФИГ (ОДИН РАЗ) ─────────────────────────────────────
         self.config = self.config_service.load()
@@ -83,60 +94,408 @@ class MainWindow(QWidget):
     # ==================================================================
 
     def _init_ui(self):
+        self._apply_styles()
+
         layout = QVBoxLayout()
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(16)
 
-        for key, title in CATEGORIES:
-            layout.addWidget(QLabel(f"<b>{title}</b>"))
-
-            # Локальный путь
-            local_layout = QHBoxLayout()
-            local_input = QLineEdit()
-            btn_select = QPushButton("Выбрать")
-            btn_upload = QPushButton("Отправить")
-
-            btn_select.clicked.connect(
-                lambda _, k=key: self._select_local_path(k)
-            )
-            btn_upload.clicked.connect(
-                lambda _, k=key: self._upload_clicked(k)
-            )
-
-            local_layout.addWidget(QLabel("Локальный путь:"))
-            local_layout.addWidget(local_input)
-            local_layout.addWidget(btn_select)
-            local_layout.addWidget(btn_upload)
-
-            # Путь Яндекс.Диска
-            yadisk_layout = QHBoxLayout()
-            yadisk_input = QLineEdit()
-
-            yadisk_layout.addWidget(QLabel("Путь на Яндекс.Диске:"))
-            yadisk_layout.addWidget(yadisk_input)
-
-            self.local_inputs[key] = local_input
-            self.yadisk_inputs[key] = yadisk_input
-            self.upload_buttons[key] = btn_upload
-
-            layout.addLayout(local_layout)
-            layout.addLayout(yadisk_layout)
-
-        # Кнопка сохранения
-        btn_save = QPushButton("Сохранить пути")
-        btn_save.clicked.connect(self._save_paths)
-        layout.addWidget(btn_save)
-
-        btn_save = QPushButton("Справка")
-        btn_save.clicked.connect(self._show_help)
-        layout.addWidget(btn_save)
-
-        # Прогресс-бар
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimum(0)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("Ожидание загрузки…")
-        layout.addWidget(self.progress_bar)
+        layout.addWidget(self._build_header())
+        layout.addWidget(self._build_categories_area(), 1)
+        layout.addWidget(self._build_status_panel())
 
         self.setLayout(layout)
+
+    def _build_header(self):
+        header = QFrame()
+        header.setObjectName("Header")
+
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(20, 18, 20, 18)
+        header_layout.setSpacing(16)
+
+        title_box = QVBoxLayout()
+        title_box.setSpacing(4)
+
+        title = QLabel("Yandex Disk Uploader")
+        title.setObjectName("AppTitle")
+
+        subtitle = QLabel(
+            f"Дата загрузки: {self.app_start_time.strftime('%Y.%m.%d')}"
+        )
+        subtitle.setObjectName("MutedText")
+
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+
+        header_layout.addLayout(title_box, 1)
+
+        btn_save = QPushButton("Сохранить")
+        btn_save.setObjectName("SecondaryButton")
+        btn_save.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        btn_save.setIconSize(QSize(18, 18))
+        btn_save.clicked.connect(self._save_paths)
+
+        btn_help = QPushButton("Справка")
+        btn_help.setObjectName("SecondaryButton")
+        btn_help.setIcon(self.style().standardIcon(QStyle.SP_DialogHelpButton))
+        btn_help.setIconSize(QSize(18, 18))
+        btn_help.clicked.connect(self._show_help)
+
+        header_layout.addWidget(btn_save)
+        header_layout.addWidget(btn_help)
+
+        return header
+
+    def _build_categories_area(self):
+        scroll = QScrollArea()
+        scroll.setObjectName("CategoryScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        content = QWidget()
+        content.setObjectName("CategoryContent")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(12)
+
+        for key, title in CATEGORIES:
+            content_layout.addWidget(self._build_category_panel(key, title))
+
+        content_layout.addStretch(1)
+        scroll.setWidget(content)
+
+        return scroll
+
+    def _build_category_panel(self, key: str, title: str):
+        panel = QFrame()
+        panel.setObjectName("CategoryPanel")
+        panel.setProperty("state", "idle")
+        panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        panel_layout = QHBoxLayout(panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(0)
+
+        accent = QFrame()
+        accent.setObjectName("CategoryAccent")
+        accent.setFixedWidth(5)
+        accent.setStyleSheet(
+            f"QFrame#CategoryAccent {{ background: {CATEGORY_ACCENTS[key]}; }}"
+        )
+        panel_layout.addWidget(accent)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(18, 14, 18, 14)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("CategoryTitle")
+
+        status_label = QLabel("Готово")
+        status_label.setObjectName("StatusBadge")
+        status_label.setProperty("state", "idle")
+        status_label.setAlignment(Qt.AlignCenter)
+
+        local_label = QLabel("Локальная папка")
+        local_label.setObjectName("FieldLabel")
+        local_input = QLineEdit()
+        local_input.setPlaceholderText("Локальная папка")
+        local_input.setMinimumHeight(38)
+
+        btn_select = QPushButton("Выбрать")
+        btn_select.setObjectName("SecondaryButton")
+        btn_select.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
+        btn_select.setIconSize(QSize(18, 18))
+        btn_select.clicked.connect(lambda _, k=key: self._select_local_path(k))
+
+        yadisk_label = QLabel("Яндекс.Диск")
+        yadisk_label.setObjectName("FieldLabel")
+        yadisk_input = QLineEdit()
+        yadisk_input.setPlaceholderText("Путь на Яндекс.Диске")
+        yadisk_input.setMinimumHeight(38)
+
+        btn_upload = QPushButton("Отправить")
+        btn_upload.setObjectName("PrimaryButton")
+        btn_upload.setMinimumHeight(86)
+        btn_upload.setMinimumWidth(132)
+        btn_upload.setIcon(self.style().standardIcon(QStyle.SP_ArrowUp))
+        btn_upload.setIconSize(QSize(18, 18))
+        btn_upload.clicked.connect(lambda _, k=key: self._upload_clicked(k))
+
+        grid.addWidget(title_label, 0, 0, 1, 2)
+        grid.addWidget(status_label, 0, 2, 1, 2, Qt.AlignRight)
+        grid.addWidget(local_label, 1, 0)
+        grid.addWidget(local_input, 1, 1, 1, 2)
+        grid.addWidget(btn_select, 1, 3)
+        grid.addWidget(yadisk_label, 2, 0)
+        grid.addWidget(yadisk_input, 2, 1, 1, 3)
+        grid.addWidget(btn_upload, 1, 4, 2, 1)
+        grid.setColumnStretch(1, 3)
+        grid.setColumnStretch(2, 2)
+
+        panel_layout.addLayout(grid, 1)
+
+        self.local_inputs[key] = local_input
+        self.yadisk_inputs[key] = yadisk_input
+        self.upload_buttons[key] = btn_upload
+        self.category_panels[key] = panel
+        self.category_status_labels[key] = status_label
+
+        return panel
+
+    def _build_status_panel(self):
+        status = QFrame()
+        status.setObjectName("StatusPanel")
+
+        layout = QVBoxLayout(status)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
+
+        top_line = QHBoxLayout()
+        top_line.setSpacing(12)
+
+        self.current_state_label = QLabel("Ожидание")
+        self.current_state_label.setObjectName("CurrentState")
+
+        self.current_detail_label = QLabel("Готов к загрузке")
+        self.current_detail_label.setObjectName("MutedText")
+        self.current_detail_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+        top_line.addWidget(self.current_state_label)
+        top_line.addWidget(self.current_detail_label, 1)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("MainProgress")
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("Ожидание загрузки…")
+
+        layout.addLayout(top_line)
+        layout.addWidget(self.progress_bar)
+
+        return status
+
+    def _apply_styles(self):
+        self.setStyleSheet("""
+            QWidget {
+                background: #f5f6f3;
+                color: #222831;
+                font-family: "Segoe UI", "Arial", sans-serif;
+                font-size: 14px;
+                letter-spacing: 0;
+            }
+
+            QLabel {
+                background: transparent;
+            }
+
+            QFrame#Header,
+            QFrame#StatusPanel,
+            QFrame#CategoryPanel {
+                background: #ffffff;
+                border: 1px solid #d9ddd4;
+                border-radius: 8px;
+            }
+
+            QFrame#CategoryPanel[state="active"] {
+                border-color: #2f8f83;
+                background: #fbfefd;
+            }
+
+            QFrame#CategoryPanel[state="waiting"] {
+                border-color: #b28d2d;
+                background: #fffdf6;
+            }
+
+            QFrame#CategoryPanel[state="success"] {
+                border-color: #7aa850;
+                background: #fbfef8;
+            }
+
+            QFrame#CategoryPanel[state="error"] {
+                border-color: #c75c38;
+                background: #fffaf8;
+            }
+
+            QFrame#CategoryPanel[state="cancelled"] {
+                border-color: #8b7b61;
+                background: #fbfaf7;
+            }
+
+            QScrollArea#CategoryScroll,
+            QWidget#CategoryContent {
+                background: transparent;
+                border: none;
+            }
+
+            QLabel#AppTitle {
+                color: #1d252f;
+                font-size: 24px;
+                font-weight: 700;
+            }
+
+            QLabel#CategoryTitle {
+                color: #1d252f;
+                font-size: 16px;
+                font-weight: 700;
+            }
+
+            QLabel#CurrentState {
+                color: #1d252f;
+                font-size: 16px;
+                font-weight: 700;
+            }
+
+            QLabel#MutedText {
+                color: #667065;
+            }
+
+            QLabel#FieldLabel {
+                color: #56605a;
+                font-size: 13px;
+                font-weight: 600;
+            }
+
+            QLabel#StatusBadge {
+                background: #eef1eb;
+                color: #56605a;
+                border: 1px solid #d9ddd4;
+                border-radius: 8px;
+                padding: 5px 10px;
+                font-size: 12px;
+                font-weight: 700;
+            }
+
+            QLabel#StatusBadge[state="active"] {
+                background: #e6f3f1;
+                color: #1f7168;
+                border-color: #a8d7d1;
+            }
+
+            QLabel#StatusBadge[state="success"] {
+                background: #edf6e7;
+                color: #4f7f29;
+                border-color: #c7dfb7;
+            }
+
+            QLabel#StatusBadge[state="error"] {
+                background: #fff0e9;
+                color: #a74726;
+                border-color: #ecc0ad;
+            }
+
+            QLabel#StatusBadge[state="waiting"] {
+                background: #f8f0d8;
+                color: #85691d;
+                border-color: #e6d29b;
+            }
+
+            QLabel#StatusBadge[state="cancelled"] {
+                background: #eee9df;
+                color: #675943;
+                border-color: #d7cbb8;
+            }
+
+            QLineEdit {
+                background: #fbfcfa;
+                border: 1px solid #cfd5cc;
+                border-radius: 6px;
+                padding: 8px 10px;
+                selection-background-color: #2f8f83;
+            }
+
+            QLineEdit:focus {
+                border-color: #2f8f83;
+                background: #ffffff;
+            }
+
+            QPushButton {
+                background: #ffffff;
+                border: 1px solid #cfd5cc;
+                border-radius: 6px;
+                padding: 9px 13px;
+                font-weight: 600;
+            }
+
+            QPushButton:hover {
+                background: #f1f4ef;
+                border-color: #aeb8ad;
+            }
+
+            QPushButton:pressed {
+                background: #e7ece5;
+            }
+
+            QPushButton:disabled {
+                background: #ecefeb;
+                color: #9aa39a;
+                border-color: #d9ddd4;
+            }
+
+            QPushButton#PrimaryButton {
+                background: #2f8f83;
+                color: #ffffff;
+                border: none;
+            }
+
+            QPushButton#PrimaryButton:hover {
+                background: #287c72;
+            }
+
+            QPushButton#PrimaryButton:pressed {
+                background: #226b63;
+            }
+
+            QPushButton#PrimaryButton:disabled {
+                background: #b9d2ce;
+                color: #eef6f4;
+            }
+
+            QProgressBar#MainProgress {
+                background: #e8ece5;
+                border: none;
+                border-radius: 7px;
+                color: #1d252f;
+                height: 16px;
+                text-align: center;
+                font-size: 12px;
+                font-weight: 700;
+            }
+
+            QProgressBar#MainProgress::chunk {
+                background: #2f8f83;
+                border-radius: 7px;
+            }
+
+            QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 2px 0 2px 0;
+            }
+
+            QScrollBar::handle:vertical {
+                background: #c7cec4;
+                border-radius: 5px;
+                min-height: 36px;
+            }
+
+            QScrollBar::handle:vertical:hover {
+                background: #aeb8ad;
+            }
+
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+        """)
 
     # ==================================================================
     # Пути
@@ -260,6 +619,9 @@ class MainWindow(QWidget):
 
         ok, error_message = PathValidator.validate_local_directory(local_path)
         if not ok:
+            self._set_category_state(category, "error", "Ошибка")
+            self.current_state_label.setText("Ошибка ввода")
+            self.current_detail_label.setText(error_message)
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -271,6 +633,9 @@ class MainWindow(QWidget):
         yadisk_path = self.yadisk_inputs[category].text().strip()
 
         if not yadisk_path:
+            self._set_category_state(category, "error", "Ошибка")
+            self.current_state_label.setText("Ошибка ввода")
+            self.current_detail_label.setText("Не указан путь на Яндекс.Диске")
             QMessageBox.critical(
                 self,
                 "Ошибка",
@@ -287,6 +652,9 @@ class MainWindow(QWidget):
 
         self.upload_in_progress = True
         self._set_upload_controls_enabled(False)
+        self._set_category_state(category, "waiting", "Подготовка")
+        self.current_state_label.setText("Подготовка")
+        self.current_detail_label.setText(get_category_label(category))
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
         self.progress_bar.setFormat("Подготовка загрузки…")
@@ -301,6 +669,9 @@ class MainWindow(QWidget):
     def on_task_started(self, task):
         self.upload_in_progress = True
         self._set_upload_controls_enabled(False)
+        self._set_category_state(task.category, "active", "Загрузка")
+        self.current_state_label.setText("Загрузка")
+        self.current_detail_label.setText(get_category_label(task.category))
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setFormat(
@@ -315,13 +686,22 @@ class MainWindow(QWidget):
         self.progress_bar.setValue(uploaded)
 
         percent = int(uploaded / total * 100)
+        self.current_state_label.setText(f"Загрузка {percent}%")
+        self.current_detail_label.setText(
+            f"{get_category_label(task.category)} · "
+            f"{self._format_size(uploaded)} / {self._format_size(total)}"
+        )
         self.progress_bar.setFormat(
-            f"{get_category_label(task.category)}: {percent}% ({uploaded // 1024} / {total // 1024} KB)"
+            f"{get_category_label(task.category)}: {percent}% "
+            f"({self._format_size(uploaded)} / {self._format_size(total)})"
         )
 
     def on_task_finished(self, task):
         self.progress_bar.setValue(self.progress_bar.maximum())
         self.progress_bar.setFormat("Загрузка завершена")
+        self._set_category_state(task.category, "success", "Завершено")
+        self.current_state_label.setText("Готово")
+        self.current_detail_label.setText(get_category_label(task.category))
         self._finish_current_upload()
 
         QMessageBox.information(
@@ -332,6 +712,9 @@ class MainWindow(QWidget):
 
     def on_task_error(self, task, message):
         self.progress_bar.setFormat("Ошибка загрузки")
+        self._set_category_state(task.category, "error", "Ошибка")
+        self.current_state_label.setText("Ошибка")
+        self.current_detail_label.setText(message.splitlines()[0])
         self._finish_current_upload()
 
         QMessageBox.critical(
@@ -342,6 +725,9 @@ class MainWindow(QWidget):
 
     def on_task_cancelled(self, task):
         self.progress_bar.setFormat("Загрузка прервана")
+        self._set_category_state(task.category, "cancelled", "Прервано")
+        self.current_state_label.setText("Прервано")
+        self.current_detail_label.setText(get_category_label(task.category))
         self._finish_current_upload()
 
     # ==================================================================
@@ -382,6 +768,9 @@ class MainWindow(QWidget):
         path = QFileDialog.getExistingDirectory(self, "Выберите папку")
         if path:
             self.local_inputs[key].setText(path)
+            self._set_category_state(key, "idle", "Готово")
+            self.current_state_label.setText("Папка выбрана")
+            self.current_detail_label.setText(get_category_label(key))
 
     def _set_upload_controls_enabled(self, enabled: bool):
         for button in self.upload_buttons.values():
@@ -390,3 +779,30 @@ class MainWindow(QWidget):
     def _finish_current_upload(self):
         self.upload_in_progress = False
         self._set_upload_controls_enabled(True)
+
+    def _set_category_state(self, category: str, state: str, text: str):
+        panel = self.category_panels.get(category)
+        badge = self.category_status_labels.get(category)
+
+        if panel:
+            panel.setProperty("state", state)
+            self._refresh_widget_style(panel)
+
+        if badge:
+            badge.setText(text)
+            badge.setProperty("state", state)
+            self._refresh_widget_style(badge)
+
+    def _refresh_widget_style(self, widget):
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+        widget.update()
+
+    def _format_size(self, size: int) -> str:
+        if size < 1024:
+            return f"{size} Б"
+        if size < 1024 * 1024:
+            return f"{size / 1024:.1f} КБ"
+        if size < 1024 * 1024 * 1024:
+            return f"{size / (1024 * 1024):.1f} МБ"
+        return f"{size / (1024 * 1024 * 1024):.1f} ГБ"
