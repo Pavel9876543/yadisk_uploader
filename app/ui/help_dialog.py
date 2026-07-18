@@ -9,25 +9,79 @@ class HelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Справка")
-        self.resize(600, 500)
+        self.resize(680, 560)
+        self.setObjectName("HelpDialog")
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 22, 22, 22)
+        layout.setSpacing(14)
 
-        title = QLabel("<h2>Инструкция по работе с Yandex Disk Uploader</h2>")
+        title = QLabel("Справка")
+        title.setObjectName("HelpTitle")
         layout.addWidget(title)
 
         text = QTextBrowser()
+        text.setObjectName("HelpText")
         text.setOpenExternalLinks(True)
         text.setHtml(self._get_help_text())
         layout.addWidget(text)
 
         btn_close = QPushButton("Закрыть")
+        btn_close.setObjectName("PrimaryButton")
+        btn_close.setMinimumHeight(40)
         btn_close.clicked.connect(self.close)
         layout.addWidget(btn_close)
 
+        self.setStyleSheet("""
+            QDialog#HelpDialog {
+                background: #111317;
+            }
+
+            QLabel#HelpTitle {
+                color: #f7fafc;
+                font-family: "Segoe UI", "Arial", sans-serif;
+                font-size: 24px;
+                font-weight: 800;
+            }
+
+            QTextBrowser#HelpText {
+                background: #fbfcfe;
+                color: #1f2937;
+                border: 1px solid #dce2ea;
+                border-radius: 8px;
+                padding: 12px;
+                font-family: "Segoe UI", "Arial", sans-serif;
+                font-size: 14px;
+                selection-background-color: #14b8a6;
+            }
+
+            QPushButton#PrimaryButton {
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 #14b8a6,
+                    stop: 1 #2563eb
+                );
+                border: none;
+                border-radius: 6px;
+                color: #ffffff;
+                font-family: "Segoe UI", "Arial", sans-serif;
+                font-size: 14px;
+                font-weight: 800;
+                padding: 9px 14px;
+            }
+
+            QPushButton#PrimaryButton:hover {
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 #0d9488,
+                    stop: 1 #1d4ed8
+                );
+            }
+        """)
+
     def _get_help_text(self) -> str:
         return """
-        <h3>Общая инструкция по работе с приложением</h3>
+        <h3>Yandex Disk Uploader</h3>
 
 <ol>
   <li>
@@ -40,7 +94,7 @@ class HelpDialog(QDialog):
     <b>Настройте локальные пути</b><br>
     Для каждой категории файлов (исходные и обработанные фото/видео)
     укажите локальную папку с файлами. Путь можно выбрать через диалог
-    или ввести вручную. После указания нажмите кнопку <i>Сохранить пути</i>.
+    или ввести вручную. После указания нажмите кнопку <i>Сохранить</i>.
     При следующем запуске они автоматически подставятся в поля.
   </li>
 
@@ -60,7 +114,7 @@ class HelpDialog(QDialog):
 
   <li>
     <b>Запуск загрузки</b><br>
-    Нажмите кнопку <b>«Отправить»</b> рядом с нужной категорией.
+    Нажмите кнопку <b>«Загрузить»</b> рядом с нужной категорией.
     Загрузка выполняется асинхронно и не блокирует интерфейс.
     Пока загрузка выполняется, отправка других папок недоступна:
     приложение загружает только одну папку за раз.
@@ -85,7 +139,7 @@ class HelpDialog(QDialog):
 
   <li>
     <b>Сохранение путей</b><br>
-    При нажатии <b>«Сохранить пути»</b>:
+    При нажатии <b>«Сохранить»</b>:
     <ul>
       <li>локальные пути сохраняются полностью</li>
       <li>для Яндекс.Диска сохраняется только базовый путь - первые две корневые папки

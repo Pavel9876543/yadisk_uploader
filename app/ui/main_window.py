@@ -30,10 +30,24 @@ CATEGORIES = [
 ]
 
 CATEGORY_ACCENTS = {
-    "processed_photos": "#2f8f83",
-    "raw_photos": "#b28d2d",
-    "processed_video": "#3662a3",
-    "raw_video": "#c75c38",
+    "processed_photos": "#14b8a6",
+    "raw_photos": "#f59e0b",
+    "processed_video": "#3b82f6",
+    "raw_video": "#f97316",
+}
+
+CATEGORY_DETAILS = {
+    "processed_photos": "Фото / готовый материал",
+    "raw_photos": "Фото / исходники",
+    "processed_video": "Видео / готовый материал",
+    "raw_video": "Видео / исходники",
+}
+
+CATEGORY_ICONS = {
+    "processed_photos": QStyle.SP_FileDialogContentsView,
+    "raw_photos": QStyle.SP_FileDialogDetailedView,
+    "processed_video": QStyle.SP_MediaPlay,
+    "raw_video": QStyle.SP_FileIcon,
 }
 
 
@@ -41,8 +55,8 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Yandex Disk Uploader")
-        self.resize(1040, 720)
-        self.setMinimumSize(880, 620)
+        self.resize(1120, 760)
+        self.setMinimumSize(940, 660)
 
         # ─── СЕРВИСЫ ───────────────────────────────────────────────
         self.config_service = ConfigService()
@@ -94,34 +108,140 @@ class MainWindow(QWidget):
     # ==================================================================
 
     def _init_ui(self):
+        self.setObjectName("AppRoot")
         self._apply_styles()
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(24, 22, 24, 22)
-        layout.setSpacing(16)
+        layout = QHBoxLayout()
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(18)
 
-        layout.addWidget(self._build_header())
-        layout.addWidget(self._build_categories_area(), 1)
-        layout.addWidget(self._build_status_panel())
+        workspace = QWidget()
+        workspace.setObjectName("Workspace")
+        workspace_layout = QVBoxLayout(workspace)
+        workspace_layout.setContentsMargins(0, 0, 0, 0)
+        workspace_layout.setSpacing(14)
+
+        workspace_layout.addWidget(self._build_header())
+        workspace_layout.addWidget(self._build_categories_area(), 1)
+        workspace_layout.addWidget(self._build_status_panel())
+
+        layout.addWidget(self._build_sidebar())
+        layout.addWidget(workspace, 1)
 
         self.setLayout(layout)
+
+    def _build_sidebar(self):
+        sidebar = QFrame()
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(248)
+
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(16)
+
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(12)
+
+        brand_icon = QLabel()
+        brand_icon.setObjectName("BrandIcon")
+        brand_icon.setFixedSize(48, 48)
+        brand_icon.setAlignment(Qt.AlignCenter)
+        brand_icon.setText("YD")
+
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(1)
+        brand_title = QLabel("Yandex Disk")
+        brand_title.setObjectName("SidebarTitle")
+        brand_subtitle = QLabel("Uploader")
+        brand_subtitle.setObjectName("SidebarSubtitle")
+        brand_text.addWidget(brand_title)
+        brand_text.addWidget(brand_subtitle)
+
+        brand_row.addWidget(brand_icon)
+        brand_row.addLayout(brand_text, 1)
+        layout.addLayout(brand_row)
+
+        session_panel = QFrame()
+        session_panel.setObjectName("SidebarPanel")
+        session_layout = QVBoxLayout(session_panel)
+        session_layout.setContentsMargins(14, 12, 14, 12)
+        session_layout.setSpacing(10)
+
+        session_label = QLabel("Сессия")
+        session_label.setObjectName("SidebarLabel")
+        session_date = QLabel(self.app_start_time.strftime("%Y.%m.%d"))
+        session_date.setObjectName("SidebarMetric")
+        session_layout.addWidget(session_label)
+        session_layout.addWidget(session_date)
+
+        layout.addWidget(session_panel)
+
+        counters_panel = QFrame()
+        counters_panel.setObjectName("SidebarPanel")
+        counters_layout = QGridLayout(counters_panel)
+        counters_layout.setContentsMargins(14, 12, 14, 12)
+        counters_layout.setHorizontalSpacing(10)
+        counters_layout.setVerticalSpacing(8)
+
+        categories_count = QLabel(str(len(CATEGORIES)))
+        categories_count.setObjectName("CounterValue")
+        categories_label = QLabel("категории")
+        categories_label.setObjectName("CounterLabel")
+        mode_count = QLabel("1")
+        mode_count.setObjectName("CounterValue")
+        mode_label = QLabel("поток")
+        mode_label.setObjectName("CounterLabel")
+
+        counters_layout.addWidget(categories_count, 0, 0)
+        counters_layout.addWidget(categories_label, 1, 0)
+        counters_layout.addWidget(mode_count, 0, 1)
+        counters_layout.addWidget(mode_label, 1, 1)
+        counters_layout.setColumnStretch(0, 1)
+        counters_layout.setColumnStretch(1, 1)
+
+        layout.addWidget(counters_panel)
+
+        btn_save = QPushButton("Сохранить")
+        btn_save.setObjectName("SidebarButton")
+        btn_save.setMinimumHeight(42)
+        btn_save.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        btn_save.setIconSize(QSize(18, 18))
+        btn_save.clicked.connect(self._save_paths)
+
+        btn_help = QPushButton("Справка")
+        btn_help.setObjectName("SidebarButton")
+        btn_help.setMinimumHeight(42)
+        btn_help.setIcon(self.style().standardIcon(QStyle.SP_DialogHelpButton))
+        btn_help.setIconSize(QSize(18, 18))
+        btn_help.clicked.connect(self._show_help)
+
+        layout.addWidget(btn_save)
+        layout.addWidget(btn_help)
+        layout.addStretch(1)
+
+        footer = QLabel("Готов к загрузке")
+        footer.setObjectName("SidebarFooter")
+        footer.setAlignment(Qt.AlignCenter)
+        layout.addWidget(footer)
+
+        return sidebar
 
     def _build_header(self):
         header = QFrame()
         header.setObjectName("Header")
 
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(20, 18, 20, 18)
+        header_layout.setContentsMargins(22, 18, 22, 18)
         header_layout.setSpacing(16)
 
         title_box = QVBoxLayout()
-        title_box.setSpacing(4)
+        title_box.setSpacing(5)
 
-        title = QLabel("Yandex Disk Uploader")
+        title = QLabel("Загрузка медиатеки")
         title.setObjectName("AppTitle")
 
         subtitle = QLabel(
-            f"Дата загрузки: {self.app_start_time.strftime('%Y.%m.%d')}"
+            f"Yandex Disk / {self.app_start_time.strftime('%Y.%m.%d')}"
         )
         subtitle.setObjectName("MutedText")
 
@@ -130,20 +250,10 @@ class MainWindow(QWidget):
 
         header_layout.addLayout(title_box, 1)
 
-        btn_save = QPushButton("Сохранить")
-        btn_save.setObjectName("SecondaryButton")
-        btn_save.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
-        btn_save.setIconSize(QSize(18, 18))
-        btn_save.clicked.connect(self._save_paths)
-
-        btn_help = QPushButton("Справка")
-        btn_help.setObjectName("SecondaryButton")
-        btn_help.setIcon(self.style().standardIcon(QStyle.SP_DialogHelpButton))
-        btn_help.setIconSize(QSize(18, 18))
-        btn_help.clicked.connect(self._show_help)
-
-        header_layout.addWidget(btn_save)
-        header_layout.addWidget(btn_help)
+        ready_badge = QLabel("Готово")
+        ready_badge.setObjectName("HeaderBadge")
+        ready_badge.setAlignment(Qt.AlignCenter)
+        header_layout.addWidget(ready_badge)
 
         return header
 
@@ -156,8 +266,8 @@ class MainWindow(QWidget):
         content = QWidget()
         content.setObjectName("CategoryContent")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(0, 2, 6, 2)
+        content_layout.setSpacing(14)
 
         for key, title in CATEGORIES:
             content_layout.addWidget(self._build_category_panel(key, title))
@@ -186,46 +296,76 @@ class MainWindow(QWidget):
         panel_layout.addWidget(accent)
 
         grid = QGridLayout()
-        grid.setContentsMargins(18, 14, 18, 14)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(10)
+        grid.setContentsMargins(18, 16, 18, 16)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(11)
+
+        heading = QHBoxLayout()
+        heading.setSpacing(12)
+
+        icon_label = QLabel()
+        icon_label.setObjectName("CategoryIcon")
+        icon_label.setProperty("category", key)
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setFixedSize(44, 44)
+        icon_label.setPixmap(
+            self.style().standardIcon(CATEGORY_ICONS[key]).pixmap(QSize(24, 24))
+        )
 
         title_label = QLabel(title)
         title_label.setObjectName("CategoryTitle")
+
+        detail_label = QLabel(CATEGORY_DETAILS[key])
+        detail_label.setObjectName("CategoryDetail")
+
+        title_stack = QVBoxLayout()
+        title_stack.setSpacing(2)
+        title_stack.addWidget(title_label)
+        title_stack.addWidget(detail_label)
+
+        heading.addWidget(icon_label)
+        heading.addLayout(title_stack, 1)
 
         status_label = QLabel("Готово")
         status_label.setObjectName("StatusBadge")
         status_label.setProperty("state", "idle")
         status_label.setAlignment(Qt.AlignCenter)
+        status_label.setMinimumWidth(96)
 
         local_label = QLabel("Локальная папка")
         local_label.setObjectName("FieldLabel")
+        local_label.setMinimumWidth(112)
         local_input = QLineEdit()
         local_input.setPlaceholderText("Локальная папка")
-        local_input.setMinimumHeight(38)
+        local_input.setMinimumHeight(40)
+        local_input.setClearButtonEnabled(True)
 
         btn_select = QPushButton("Выбрать")
         btn_select.setObjectName("SecondaryButton")
+        btn_select.setMinimumWidth(112)
         btn_select.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
         btn_select.setIconSize(QSize(18, 18))
+        btn_select.setToolTip("Выбрать локальную папку")
         btn_select.clicked.connect(lambda _, k=key: self._select_local_path(k))
 
         yadisk_label = QLabel("Яндекс.Диск")
         yadisk_label.setObjectName("FieldLabel")
         yadisk_input = QLineEdit()
         yadisk_input.setPlaceholderText("Путь на Яндекс.Диске")
-        yadisk_input.setMinimumHeight(38)
+        yadisk_input.setMinimumHeight(40)
+        yadisk_input.setClearButtonEnabled(True)
 
-        btn_upload = QPushButton("Отправить")
+        btn_upload = QPushButton("Загрузить")
         btn_upload.setObjectName("PrimaryButton")
-        btn_upload.setMinimumHeight(86)
+        btn_upload.setMinimumHeight(92)
         btn_upload.setMinimumWidth(132)
         btn_upload.setIcon(self.style().standardIcon(QStyle.SP_ArrowUp))
         btn_upload.setIconSize(QSize(18, 18))
+        btn_upload.setToolTip("Запустить загрузку этой категории")
         btn_upload.clicked.connect(lambda _, k=key: self._upload_clicked(k))
 
-        grid.addWidget(title_label, 0, 0, 1, 2)
-        grid.addWidget(status_label, 0, 2, 1, 2, Qt.AlignRight)
+        grid.addLayout(heading, 0, 0, 1, 3)
+        grid.addWidget(status_label, 0, 3, 1, 1, Qt.AlignRight)
         grid.addWidget(local_label, 1, 0)
         grid.addWidget(local_input, 1, 1, 1, 2)
         grid.addWidget(btn_select, 1, 3)
@@ -250,11 +390,19 @@ class MainWindow(QWidget):
         status.setObjectName("StatusPanel")
 
         layout = QVBoxLayout(status)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(22, 16, 22, 16)
+        layout.setSpacing(12)
 
         top_line = QHBoxLayout()
         top_line.setSpacing(12)
+
+        status_icon = QLabel()
+        status_icon.setObjectName("StatusIcon")
+        status_icon.setFixedSize(34, 34)
+        status_icon.setAlignment(Qt.AlignCenter)
+        status_icon.setPixmap(
+            self.style().standardIcon(QStyle.SP_BrowserReload).pixmap(QSize(19, 19))
+        )
 
         self.current_state_label = QLabel("Ожидание")
         self.current_state_label.setObjectName("CurrentState")
@@ -263,8 +411,13 @@ class MainWindow(QWidget):
         self.current_detail_label.setObjectName("MutedText")
         self.current_detail_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        top_line.addWidget(self.current_state_label)
-        top_line.addWidget(self.current_detail_label, 1)
+        state_stack = QVBoxLayout()
+        state_stack.setSpacing(1)
+        state_stack.addWidget(self.current_state_label)
+        state_stack.addWidget(self.current_detail_label)
+
+        top_line.addWidget(status_icon)
+        top_line.addLayout(state_stack, 1)
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setObjectName("MainProgress")
@@ -281,48 +434,131 @@ class MainWindow(QWidget):
     def _apply_styles(self):
         self.setStyleSheet("""
             QWidget {
-                background: #f5f6f3;
-                color: #222831;
+                color: #20242a;
                 font-family: "Segoe UI", "Arial", sans-serif;
                 font-size: 14px;
                 letter-spacing: 0;
+            }
+
+            QWidget#AppRoot {
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 #111317,
+                    stop: 0.52 #191b20,
+                    stop: 1 #202025
+                );
+            }
+
+            QWidget#Workspace {
+                background: transparent;
             }
 
             QLabel {
                 background: transparent;
             }
 
-            QFrame#Header,
-            QFrame#StatusPanel,
-            QFrame#CategoryPanel {
-                background: #ffffff;
-                border: 1px solid #d9ddd4;
+            QFrame#Sidebar {
+                background: #15181d;
+                border: 1px solid #2a3038;
                 border-radius: 8px;
             }
 
+            QLabel#BrandIcon {
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 #1fb7a6,
+                    stop: 1 #2f6fed
+                );
+                color: #ffffff;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 900;
+            }
+
+            QLabel#SidebarTitle {
+                color: #f7fafc;
+                font-size: 18px;
+                font-weight: 800;
+            }
+
+            QLabel#SidebarSubtitle,
+            QLabel#SidebarFooter {
+                color: #9ea8b5;
+                font-size: 13px;
+                font-weight: 600;
+            }
+
+            QLabel#SidebarFooter {
+                background: #101216;
+                border: 1px solid #2a3038;
+                border-radius: 8px;
+                padding: 10px;
+            }
+
+            QFrame#SidebarPanel {
+                background: #101216;
+                border: 1px solid #2a3038;
+                border-radius: 8px;
+            }
+
+            QLabel#SidebarLabel,
+            QLabel#CounterLabel {
+                color: #8994a2;
+                font-size: 12px;
+                font-weight: 700;
+            }
+
+            QLabel#SidebarMetric,
+            QLabel#CounterValue {
+                color: #f7fafc;
+                font-size: 22px;
+                font-weight: 800;
+            }
+
+            QFrame#Header,
+            QFrame#StatusPanel,
+            QFrame#CategoryPanel {
+                background: #fbfcfe;
+                border: 1px solid #dce2ea;
+                border-radius: 8px;
+            }
+
+            QFrame#Header {
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 0,
+                    stop: 0 #f7fbff,
+                    stop: 0.52 #ffffff,
+                    stop: 1 #fff7ed
+                );
+            }
+
+            QFrame#StatusPanel {
+                background: #f7f9fc;
+            }
+
             QFrame#CategoryPanel[state="active"] {
-                border-color: #2f8f83;
-                background: #fbfefd;
+                border-color: #14b8a6;
+                background: #f3fffd;
             }
 
             QFrame#CategoryPanel[state="waiting"] {
-                border-color: #b28d2d;
-                background: #fffdf6;
+                border-color: #f59e0b;
+                background: #fffaf0;
             }
 
             QFrame#CategoryPanel[state="success"] {
-                border-color: #7aa850;
-                background: #fbfef8;
+                border-color: #22c55e;
+                background: #f4fff8;
             }
 
             QFrame#CategoryPanel[state="error"] {
-                border-color: #c75c38;
-                background: #fffaf8;
+                border-color: #ef4444;
+                background: #fff7f7;
             }
 
             QFrame#CategoryPanel[state="cancelled"] {
-                border-color: #8b7b61;
-                background: #fbfaf7;
+                border-color: #64748b;
+                background: #f8fafc;
             }
 
             QScrollArea#CategoryScroll,
@@ -332,142 +568,216 @@ class MainWindow(QWidget):
             }
 
             QLabel#AppTitle {
-                color: #1d252f;
-                font-size: 24px;
-                font-weight: 700;
+                color: #141820;
+                font-size: 28px;
+                font-weight: 800;
+            }
+
+            QLabel#HeaderBadge {
+                background: #111827;
+                color: #ffffff;
+                border-radius: 8px;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: 800;
             }
 
             QLabel#CategoryTitle {
-                color: #1d252f;
+                color: #171b22;
                 font-size: 16px;
-                font-weight: 700;
+                font-weight: 800;
             }
 
-            QLabel#CurrentState {
-                color: #1d252f;
-                font-size: 16px;
-                font-weight: 700;
-            }
-
-            QLabel#MutedText {
-                color: #667065;
-            }
-
-            QLabel#FieldLabel {
-                color: #56605a;
-                font-size: 13px;
+            QLabel#CategoryDetail {
+                color: #6b7280;
+                font-size: 12px;
                 font-weight: 600;
             }
 
+            QLabel#CategoryIcon {
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.55);
+            }
+
+            QLabel#CategoryIcon[category="processed_photos"] {
+                background: #ccfbf1;
+            }
+
+            QLabel#CategoryIcon[category="raw_photos"] {
+                background: #fef3c7;
+            }
+
+            QLabel#CategoryIcon[category="processed_video"] {
+                background: #dbeafe;
+            }
+
+            QLabel#CategoryIcon[category="raw_video"] {
+                background: #ffedd5;
+            }
+
+            QLabel#CurrentState {
+                color: #141820;
+                font-size: 16px;
+                font-weight: 800;
+            }
+
+            QLabel#MutedText {
+                color: #697381;
+            }
+
+            QLabel#FieldLabel {
+                color: #4b5563;
+                font-size: 13px;
+                font-weight: 800;
+            }
+
             QLabel#StatusBadge {
-                background: #eef1eb;
-                color: #56605a;
-                border: 1px solid #d9ddd4;
+                background: #eef2f7;
+                color: #4b5563;
+                border: 1px solid #d8dee8;
                 border-radius: 8px;
                 padding: 5px 10px;
                 font-size: 12px;
-                font-weight: 700;
+                font-weight: 800;
             }
 
             QLabel#StatusBadge[state="active"] {
-                background: #e6f3f1;
-                color: #1f7168;
-                border-color: #a8d7d1;
+                background: #ccfbf1;
+                color: #0f766e;
+                border-color: #8be3d6;
             }
 
             QLabel#StatusBadge[state="success"] {
-                background: #edf6e7;
-                color: #4f7f29;
-                border-color: #c7dfb7;
+                background: #dcfce7;
+                color: #166534;
+                border-color: #9ee6b7;
             }
 
             QLabel#StatusBadge[state="error"] {
-                background: #fff0e9;
-                color: #a74726;
-                border-color: #ecc0ad;
+                background: #fee2e2;
+                color: #991b1b;
+                border-color: #fecaca;
             }
 
             QLabel#StatusBadge[state="waiting"] {
-                background: #f8f0d8;
-                color: #85691d;
-                border-color: #e6d29b;
+                background: #fef3c7;
+                color: #92400e;
+                border-color: #fde68a;
             }
 
             QLabel#StatusBadge[state="cancelled"] {
-                background: #eee9df;
-                color: #675943;
-                border-color: #d7cbb8;
+                background: #e2e8f0;
+                color: #334155;
+                border-color: #cbd5e1;
+            }
+
+            QLabel#StatusIcon {
+                background: #e0f2fe;
+                border: 1px solid #bae6fd;
+                border-radius: 8px;
             }
 
             QLineEdit {
-                background: #fbfcfa;
-                border: 1px solid #cfd5cc;
+                background: #ffffff;
+                border: 1px solid #cfd8e3;
                 border-radius: 6px;
-                padding: 8px 10px;
-                selection-background-color: #2f8f83;
+                padding: 8px 11px;
+                color: #111827;
+                selection-background-color: #14b8a6;
             }
 
             QLineEdit:focus {
-                border-color: #2f8f83;
-                background: #ffffff;
+                border-color: #14b8a6;
+                background: #fcfffe;
             }
 
             QPushButton {
                 background: #ffffff;
-                border: 1px solid #cfd5cc;
+                border: 1px solid #cfd8e3;
                 border-radius: 6px;
                 padding: 9px 13px;
-                font-weight: 600;
+                font-weight: 800;
+                color: #1f2937;
             }
 
             QPushButton:hover {
-                background: #f1f4ef;
-                border-color: #aeb8ad;
+                background: #f3f7fb;
+                border-color: #aab7c7;
             }
 
             QPushButton:pressed {
-                background: #e7ece5;
+                background: #e8eef6;
             }
 
             QPushButton:disabled {
-                background: #ecefeb;
-                color: #9aa39a;
-                border-color: #d9ddd4;
+                background: #edf1f5;
+                color: #9aa5b1;
+                border-color: #dce2ea;
+            }
+
+            QPushButton#SidebarButton {
+                background: #20252d;
+                border: 1px solid #343c48;
+                color: #f7fafc;
+                text-align: left;
+                padding-left: 12px;
+            }
+
+            QPushButton#SidebarButton:hover {
+                background: #2a3140;
+                border-color: #425066;
+            }
+
+            QPushButton#SidebarButton:pressed {
+                background: #171b22;
             }
 
             QPushButton#PrimaryButton {
-                background: #2f8f83;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 #14b8a6,
+                    stop: 1 #2563eb
+                );
                 color: #ffffff;
                 border: none;
             }
 
             QPushButton#PrimaryButton:hover {
-                background: #287c72;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 1,
+                    stop: 0 #0d9488,
+                    stop: 1 #1d4ed8
+                );
             }
 
             QPushButton#PrimaryButton:pressed {
-                background: #226b63;
+                background: #0f766e;
             }
 
             QPushButton#PrimaryButton:disabled {
-                background: #b9d2ce;
-                color: #eef6f4;
+                background: #a9b8c9;
+                color: #eef4fb;
             }
 
             QProgressBar#MainProgress {
-                background: #e8ece5;
+                background: #e2e8f0;
                 border: none;
-                border-radius: 7px;
-                color: #1d252f;
-                height: 16px;
+                border-radius: 8px;
+                color: #111827;
+                height: 18px;
                 text-align: center;
                 font-size: 12px;
-                font-weight: 700;
+                font-weight: 800;
             }
 
             QProgressBar#MainProgress::chunk {
-                background: #2f8f83;
-                border-radius: 7px;
+                background: qlineargradient(
+                    x1: 0, y1: 0, x2: 1, y2: 0,
+                    stop: 0 #14b8a6,
+                    stop: 0.55 #22c55e,
+                    stop: 1 #3b82f6
+                );
+                border-radius: 8px;
             }
 
             QScrollBar:vertical {
@@ -477,13 +787,21 @@ class MainWindow(QWidget):
             }
 
             QScrollBar::handle:vertical {
-                background: #c7cec4;
+                background: #8d99a8;
                 border-radius: 5px;
                 min-height: 36px;
             }
 
             QScrollBar::handle:vertical:hover {
-                background: #aeb8ad;
+                background: #6f7c8d;
+            }
+
+            QToolTip {
+                background: #111827;
+                color: #ffffff;
+                border: 1px solid #374151;
+                border-radius: 6px;
+                padding: 6px;
             }
 
             QScrollBar::add-line:vertical,
@@ -525,12 +843,16 @@ class MainWindow(QWidget):
         # Локальные пути
         for category, path in self.config.get("local_paths", {}).items():
             if category in self.local_inputs:
-                self.local_inputs[category].setText(path or "")
+                line_edit = self.local_inputs[category]
+                line_edit.setText(path or "")
+                line_edit.setCursorPosition(0)
 
         # Пути Яндекс.Диска — УЖЕ С ДАТОЙ
         for category, final_path in self.final_yadisk_paths.items():
             if category in self.yadisk_inputs:
-                self.yadisk_inputs[category].setText(final_path)
+                line_edit = self.yadisk_inputs[category]
+                line_edit.setText(final_path)
+                line_edit.setCursorPosition(0)
 
     def _save_paths(self):
         """
@@ -768,6 +1090,7 @@ class MainWindow(QWidget):
         path = QFileDialog.getExistingDirectory(self, "Выберите папку")
         if path:
             self.local_inputs[key].setText(path)
+            self.local_inputs[key].setCursorPosition(0)
             self._set_category_state(key, "idle", "Готово")
             self.current_state_label.setText("Папка выбрана")
             self.current_detail_label.setText(get_category_label(key))
