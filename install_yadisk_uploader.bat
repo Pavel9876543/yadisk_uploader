@@ -108,16 +108,17 @@ if not defined SOURCE_DIR goto exe_not_found
 goto copy_app
 
 :copy_app
-if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%" >nul 2>nul
-if errorlevel 1 goto target_prepare_failed
-
 for %%I in ("%SOURCE_DIR%.") do set "SOURCE_DIR_FULL=%%~fI"
 
 if /i "%SOURCE_DIR_FULL%"=="%TARGET_DIR%" goto create_shortcut
 
-robocopy "%SOURCE_DIR%" "%TARGET_DIR%" /E /NFL /NDL /NJH /NJS /NP /XD "%TARGET_DIR%"
-set "ROBOCOPY_CODE=%ERRORLEVEL%"
-if %ROBOCOPY_CODE% GEQ 8 goto copy_failed
+set "SOURCE_DIR_ENV=%SOURCE_DIR%"
+set "TARGET_DIR_ENV=%TARGET_DIR%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $source=[System.IO.Path]::GetFullPath($env:SOURCE_DIR_ENV).TrimEnd('\','/'); $target=[System.IO.Path]::GetFullPath($env:TARGET_DIR_ENV).TrimEnd('\','/'); if ([string]::Equals($source, $target, [System.StringComparison]::OrdinalIgnoreCase)) { exit 10 }; if ($target.StartsWith($source + '\', [System.StringComparison]::OrdinalIgnoreCase)) { exit 11 }; New-Item -ItemType Directory -Force -LiteralPath $target | Out-Null; Get-ChildItem -LiteralPath $source -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force }"
+set "COPY_CODE=%ERRORLEVEL%"
+if "%COPY_CODE%"=="10" goto create_shortcut
+if "%COPY_CODE%"=="11" goto target_inside_source
+if not "%COPY_CODE%"=="0" goto copy_failed
 
 goto create_shortcut
 
@@ -262,9 +263,18 @@ echo Cannot create target folder:
 echo %TARGET_DIR%
 goto fail
 
+:target_inside_source
+echo.
+echo The target folder cannot be inside the source folder:
+echo %TARGET_DIR%
+echo.
+echo Choose another folder, for example:
+echo C:\yadisk_uploader
+goto fail
+
 :copy_failed
 echo.
-echo Cannot copy app files. Robocopy exit code: %ROBOCOPY_CODE%
+echo Cannot copy app files. Copy exit code: %COPY_CODE%
 goto fail
 
 :installed_exe_not_found

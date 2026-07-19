@@ -84,6 +84,7 @@ build_windows.bat
 ```text
 YadiskUploader.exe
 install_yadisk_uploader.bat
+ЧИТАТЬ.txt
 _internal\
 ```
 
@@ -92,6 +93,7 @@ _internal\
 ```text
 dist\YadiskUploader.zip
 dist\install_yadisk_uploader.bat
+dist\ЧИТАТЬ.txt
 ```
 
 Их можно передать пользователю вместе. Пользователь запускает
@@ -114,5 +116,6 @@ pyinstaller --clean --windowed --name YadiskUploader ^
 ```
 
 После ручной сборки нужно отдельно скопировать
-`install_yadisk_uploader.bat` в `dist\YadiskUploader\` и, если нужен
-архивный установщик, положить копию bat рядом с `YadiskUploader.zip`.
+`install_yadisk_uploader.bat` и `ЧИТАТЬ.txt` в `dist\YadiskUploader\`.
+Если нужен архивный установщик, положите копии `install_yadisk_uploader.bat`
+и `ЧИТАТЬ.txt` рядом с `YadiskUploader.zip`.
