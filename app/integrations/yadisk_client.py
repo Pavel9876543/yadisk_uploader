@@ -3,12 +3,12 @@
 Создаёт папки при необходимости и загружает файлы.
 """
 
-import os
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
-from dotenv import load_dotenv
 import yadisk
+
+from services.env_service import EnvService
 
 
 class UploadCancelled(RuntimeError):
@@ -21,9 +21,8 @@ class YadiskClient:
     Используется в UploadWorker.
     """
 
-    def __init__(self) -> None:
-        load_dotenv()
-        token = os.getenv("YANDEX_TOKEN")
+    def __init__(self, token: str | None = None) -> None:
+        token = (token or EnvService().load_token()).strip()
 
         if not token:
             raise RuntimeError("Не найден токен Яндекс.Диска (.env)")

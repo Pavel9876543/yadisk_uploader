@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QFileDialog, QMessageBox, QProgressBar,
-    QFrame, QGridLayout, QScrollArea, QSizePolicy, QStyle
+    QFrame, QGridLayout, QScrollArea, QSizePolicy, QStyle, QApplication
 )
 from PyQt5.QtCore import QThread, Qt, QSize
 from pathlib import Path
@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import PurePosixPath
 
 from services.config_service import ConfigService
+from services.env_service import EnvService
 from services.path_validator import PathValidator
 from services.yadisk_path_builder import build_yadisk_path
 
@@ -60,6 +61,7 @@ class MainWindow(QWidget):
 
         # ─── СЕРВИСЫ ───────────────────────────────────────────────
         self.config_service = ConfigService()
+        self.env_service = EnvService()
         self.validator = PathValidator()
 
         # ─── СОСТОЯНИЕ ─────────────────────────────────────────────
@@ -73,6 +75,8 @@ class MainWindow(QWidget):
         self.upload_buttons = {}
         self.category_panels = {}
         self.category_status_labels = {}
+        self.token_input = None
+        self.token_status_label = None
 
         # ─── КОНФИГ (ОДИН РАЗ) ─────────────────────────────────────
         self.config = self.config_service.load()
@@ -81,6 +85,7 @@ class MainWindow(QWidget):
         self._init_ui()
         self._init_final_yadisk_paths()
         self._load_paths_from_config()
+        self._load_token_from_env()
 
         # ─── ЗАГРУЗКА ──────────────────────────────────────────────
         self.upload_queue = UploadQueue()
@@ -122,6 +127,7 @@ class MainWindow(QWidget):
         workspace_layout.setSpacing(14)
 
         workspace_layout.addWidget(self._build_header())
+        workspace_layout.addWidget(self._build_token_panel())
         workspace_layout.addWidget(self._build_categories_area(), 1)
         workspace_layout.addWidget(self._build_status_panel())
 
@@ -256,6 +262,62 @@ class MainWindow(QWidget):
         header_layout.addWidget(ready_badge)
 
         return header
+
+    def _build_token_panel(self):
+        panel = QFrame()
+        panel.setObjectName("TokenPanel")
+
+        grid = QGridLayout(panel)
+        grid.setContentsMargins(22, 16, 22, 16)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(10)
+
+        title = QLabel("Токен Яндекс.Диска")
+        title.setObjectName("CategoryTitle")
+
+        self.token_status_label = QLabel("Токен не задан")
+        self.token_status_label.setObjectName("TokenStatusBadge")
+        self.token_status_label.setProperty("state", "empty")
+        self.token_status_label.setAlignment(Qt.AlignCenter)
+        self.token_status_label.setMinimumWidth(118)
+
+        token_label = QLabel("OAuth-токен")
+        token_label.setObjectName("FieldLabel")
+        token_label.setMinimumWidth(112)
+
+        self.token_input = QLineEdit()
+        self.token_input.setPlaceholderText("YANDEX_TOKEN")
+        self.token_input.setEchoMode(QLineEdit.Password)
+        self.token_input.setMinimumHeight(40)
+        self.token_input.setClearButtonEnabled(True)
+
+        btn_save_token = QPushButton("Сохранить токен")
+        btn_save_token.setObjectName("SecondaryButton")
+        btn_save_token.setMinimumHeight(40)
+        btn_save_token.setMinimumWidth(152)
+        btn_save_token.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        btn_save_token.setIconSize(QSize(18, 18))
+        btn_save_token.setToolTip("Сохранить токен в .env")
+        btn_save_token.clicked.connect(self._save_token)
+
+        btn_check_token = QPushButton("Проверить")
+        btn_check_token.setObjectName("SecondaryButton")
+        btn_check_token.setMinimumHeight(40)
+        btn_check_token.setMinimumWidth(128)
+        btn_check_token.setIcon(self.style().standardIcon(QStyle.SP_DialogApplyButton))
+        btn_check_token.setIconSize(QSize(18, 18))
+        btn_check_token.setToolTip("Проверить соединение с Яндекс.Диском")
+        btn_check_token.clicked.connect(self._check_yadisk_connection)
+
+        grid.addWidget(title, 0, 0, 1, 3)
+        grid.addWidget(self.token_status_label, 0, 3, 1, 1, Qt.AlignRight)
+        grid.addWidget(token_label, 1, 0)
+        grid.addWidget(self.token_input, 1, 1)
+        grid.addWidget(btn_save_token, 1, 2)
+        grid.addWidget(btn_check_token, 1, 3)
+        grid.setColumnStretch(1, 1)
+
+        return panel
 
     def _build_categories_area(self):
         scroll = QScrollArea()
@@ -517,6 +579,7 @@ class MainWindow(QWidget):
 
             QFrame#Header,
             QFrame#StatusPanel,
+            QFrame#TokenPanel,
             QFrame#CategoryPanel {
                 background: #fbfcfe;
                 border: 1px solid #dce2ea;
@@ -534,6 +597,10 @@ class MainWindow(QWidget):
 
             QFrame#StatusPanel {
                 background: #f7f9fc;
+            }
+
+            QFrame#TokenPanel {
+                background: #fbfcfe;
             }
 
             QFrame#CategoryPanel[state="active"] {
@@ -639,6 +706,35 @@ class MainWindow(QWidget):
                 padding: 5px 10px;
                 font-size: 12px;
                 font-weight: 800;
+            }
+
+            QLabel#TokenStatusBadge {
+                background: #eef2f7;
+                color: #4b5563;
+                border: 1px solid #d8dee8;
+                border-radius: 8px;
+                padding: 5px 10px;
+                font-size: 12px;
+                font-weight: 800;
+            }
+
+            QLabel#TokenStatusBadge[state="saved"],
+            QLabel#TokenStatusBadge[state="valid"] {
+                background: #dcfce7;
+                color: #166534;
+                border-color: #9ee6b7;
+            }
+
+            QLabel#TokenStatusBadge[state="checking"] {
+                background: #e0f2fe;
+                color: #075985;
+                border-color: #bae6fd;
+            }
+
+            QLabel#TokenStatusBadge[state="error"] {
+                background: #fee2e2;
+                color: #991b1b;
+                border-color: #fecaca;
             }
 
             QLabel#StatusBadge[state="active"] {
@@ -814,6 +910,107 @@ class MainWindow(QWidget):
                 background: transparent;
             }
         """)
+
+    # ==================================================================
+    # Токен
+    # ==================================================================
+
+    def _load_token_from_env(self):
+        token = self.env_service.load_token()
+        if not self.token_input:
+            return
+
+        self.token_input.setText(token)
+        self.token_input.setCursorPosition(0)
+
+        if token:
+            self._set_token_status("saved", "Токен загружен")
+        else:
+            self._set_token_status("empty", "Токен не задан")
+
+    def _save_token(self):
+        token = self.token_input.text().strip()
+        if not token:
+            self._set_token_status("error", "Токен не задан")
+            QMessageBox.warning(
+                self,
+                "Токен не задан",
+                "Введите OAuth-токен Яндекс.Диска."
+            )
+            return
+
+        try:
+            env_path = self.env_service.save_token(token)
+        except Exception as exc:
+            self._set_token_status("error", "Ошибка")
+            QMessageBox.critical(
+                self,
+                "Ошибка сохранения",
+                f"Не удалось сохранить токен в .env:\n{exc}"
+            )
+            return
+
+        self._set_token_status("saved", "Токен сохранён")
+        self.current_state_label.setText("Токен сохранён")
+        self.current_detail_label.setText(env_path.as_posix())
+        QMessageBox.information(
+            self,
+            "Успех",
+            "Токен Яндекс.Диска сохранён в файл .env."
+        )
+
+    def _check_yadisk_connection(self):
+        token = self.token_input.text().strip()
+        if not token:
+            self._set_token_status("error", "Токен не задан")
+            QMessageBox.warning(
+                self,
+                "Токен не задан",
+                "Введите OAuth-токен Яндекс.Диска."
+            )
+            return
+
+        self._set_token_status("checking", "Проверка")
+        self.current_state_label.setText("Проверка соединения")
+        self.current_detail_label.setText("Яндекс.Диск")
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.processEvents()
+
+        try:
+            is_valid = self.env_service.check_token(token)
+        except Exception as exc:
+            error_message = str(exc) or exc.__class__.__name__
+            self._set_token_status("error", "Ошибка")
+            self.current_state_label.setText("Ошибка соединения")
+            self.current_detail_label.setText(error_message.splitlines()[0])
+            QMessageBox.critical(
+                self,
+                "Ошибка соединения",
+                f"Не удалось проверить соединение с Яндекс.Диском:\n{error_message}"
+            )
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if is_valid:
+            self._set_token_status("valid", "Соединение есть")
+            self.current_state_label.setText("Соединение есть")
+            self.current_detail_label.setText("Токен Яндекс.Диска действителен")
+            QMessageBox.information(
+                self,
+                "Соединение есть",
+                "Токен Яндекс.Диска действителен."
+            )
+            return
+
+        self._set_token_status("error", "Неверный токен")
+        self.current_state_label.setText("Неверный токен")
+        self.current_detail_label.setText("Яндекс.Диск отклонил токен")
+        QMessageBox.warning(
+            self,
+            "Неверный токен",
+            "Яндекс.Диск отклонил указанный токен."
+        )
 
     # ==================================================================
     # Пути
@@ -1115,6 +1312,14 @@ class MainWindow(QWidget):
             badge.setText(text)
             badge.setProperty("state", state)
             self._refresh_widget_style(badge)
+
+    def _set_token_status(self, state: str, text: str):
+        if not self.token_status_label:
+            return
+
+        self.token_status_label.setText(text)
+        self.token_status_label.setProperty("state", state)
+        self._refresh_widget_style(self.token_status_label)
 
     def _refresh_widget_style(self, widget):
         widget.style().unpolish(widget)

@@ -10,7 +10,11 @@ cd /root/yadisk_uploader
 cp .env.example .env
 ```
 
-В файле `.env` укажите OAuth-токен:
+OAuth-токен можно ввести в окне приложения: поле `Токен Яндекс.Диска`,
+кнопка `Сохранить токен`. Приложение сохранит его в `.env` как
+`YANDEX_TOKEN`.
+
+Также токен можно указать вручную:
 
 ```bash
 YANDEX_TOKEN=your_token_here
