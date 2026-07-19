@@ -27,6 +27,17 @@ def _has_type(exc: Exception, types) -> bool:
     return any(isinstance(item, types) for item in _exception_chain(exc))
 
 
+def _technical_detail(exc: Exception) -> str:
+    details = []
+
+    for item in _exception_chain(exc):
+        message = str(item).strip()
+        name = item.__class__.__name__
+        details.append(f"{name}: {message}" if message else name)
+
+    return " -> ".join(details)
+
+
 def translate_exception(exc: Exception) -> str:
     """
     Преобразует исключение в человеко-читаемое сообщение.
@@ -161,5 +172,5 @@ def translate_exception(exc: Exception) -> str:
 
     return (
         "Произошла непредвиденная ошибка.\n\n"
-        f"Техническая информация:\n{str(exc)}"
+        f"Техническая информация:\n{_technical_detail(exc)}"
     )

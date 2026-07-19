@@ -6,6 +6,8 @@ import logging
 import sys
 from pathlib import Path
 
+LOG_PATH = Path.home() / ".local" / "state" / "yadisk_uploader" / "app.log"
+
 logger = logging.getLogger("yadisk_uploader")
 logger.setLevel(logging.DEBUG)
 logger.propagate = False
@@ -20,10 +22,9 @@ if not logger.handlers:
     logger.addHandler(console_handler)
 
     try:
-        log_dir = Path.home() / ".local" / "state" / "yadisk_uploader"
-        log_dir.mkdir(parents=True, exist_ok=True)
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(
-            log_dir / "app.log",
+            LOG_PATH,
             encoding="utf-8"
         )
         file_handler.setFormatter(formatter)

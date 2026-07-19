@@ -194,6 +194,12 @@ class ErrorTranslatorTest(unittest.TestCase):
             translate_exception(RuntimeError("Загрузка прервана пользователем")),
         )
 
+    def test_fallback_error_contains_exception_class_and_message(self):
+        message = translate_exception(ValueError("bad value"))
+
+        self.assertIn("ValueError", message)
+        self.assertIn("bad value", message)
+
 
 if __name__ == "__main__":
     unittest.main()

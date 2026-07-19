@@ -50,6 +50,9 @@ if defined LOCALAPPDATA (
 set "DEFAULT_TARGET=%DEFAULT_PARENT%\%DEFAULT_INSTALL_NAME%"
 set "DIALOG_TITLE=%APP_NAME% installer"
 
+where powershell.exe >nul 2>nul
+if errorlevel 1 goto powershell_missing
+
 call :choose_target_dialog
 if errorlevel 2 goto cancelled
 if errorlevel 1 goto prompt_target_console
@@ -82,12 +85,12 @@ goto copy_app
 
 :extract_archive
 set "TEMP_EXTRACT=%TEMP%\%APP_NAME%_extract_%RANDOM%%RANDOM%"
-mkdir "%TEMP_EXTRACT%" >nul 2>nul
+set "TEMP_EXTRACT_ENV=%TEMP_EXTRACT%"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { New-Item -ItemType Directory -Force -LiteralPath $env:TEMP_EXTRACT_ENV | Out-Null } catch { Write-Host ('Cannot create temporary extraction folder: ' + $_.Exception.Message); exit 1 }"
 if errorlevel 1 goto extract_prepare_failed
 
 set "ARCHIVE_PATH_ENV=%ARCHIVE_PATH%"
-set "TEMP_EXTRACT_ENV=%TEMP_EXTRACT%"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath $env:ARCHIVE_PATH_ENV -DestinationPath $env:TEMP_EXTRACT_ENV -Force"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { Expand-Archive -LiteralPath $env:ARCHIVE_PATH_ENV -DestinationPath $env:TEMP_EXTRACT_ENV -Force } catch { Write-Host ('Cannot extract archive: ' + $_.Exception.Message); exit 1 }"
 if errorlevel 1 goto extract_failed
 
 set "SOURCE_DIR="
@@ -114,7 +117,7 @@ if /i "%SOURCE_DIR_FULL%"=="%TARGET_DIR%" goto create_shortcut
 
 set "SOURCE_DIR_ENV=%SOURCE_DIR%"
 set "TARGET_DIR_ENV=%TARGET_DIR%"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $source=[System.IO.Path]::GetFullPath($env:SOURCE_DIR_ENV).TrimEnd('\','/'); $target=[System.IO.Path]::GetFullPath($env:TARGET_DIR_ENV).TrimEnd('\','/'); if ([string]::Equals($source, $target, [System.StringComparison]::OrdinalIgnoreCase)) { exit 10 }; if ($target.StartsWith($source + '\', [System.StringComparison]::OrdinalIgnoreCase)) { exit 11 }; New-Item -ItemType Directory -Force -LiteralPath $target | Out-Null; Get-ChildItem -LiteralPath $source -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force }"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $source=[System.IO.Path]::GetFullPath($env:SOURCE_DIR_ENV).TrimEnd('\','/'); $target=[System.IO.Path]::GetFullPath($env:TARGET_DIR_ENV).TrimEnd('\','/'); if ([string]::Equals($source, $target, [System.StringComparison]::OrdinalIgnoreCase)) { exit 10 }; if ($target.StartsWith($source + '\', [System.StringComparison]::OrdinalIgnoreCase)) { exit 11 }; New-Item -ItemType Directory -Force -LiteralPath $target | Out-Null; Get-ChildItem -LiteralPath $source -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force } } catch { Write-Host ('Cannot copy app files: ' + $_.Exception.Message); exit 1 }"
 set "COPY_CODE=%ERRORLEVEL%"
 if "%COPY_CODE%"=="10" goto create_shortcut
 if "%COPY_CODE%"=="11" goto target_inside_source
@@ -130,7 +133,7 @@ if not exist "%TARGET_EXE%" goto installed_exe_not_found
 
 set "SHORTCUT_TARGET=%TARGET_EXE%"
 set "SHORTCUT_NAME_ENV=%SHORTCUT_NAME%"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$target=$env:SHORTCUT_TARGET; $name=$env:SHORTCUT_NAME_ENV; $desktop=[Environment]::GetFolderPath('Desktop'); $shortcutPath=Join-Path $desktop ($name + '.lnk'); $shell=New-Object -ComObject WScript.Shell; $shortcut=$shell.CreateShortcut($shortcutPath); $shortcut.TargetPath=$target; $shortcut.WorkingDirectory=Split-Path -Parent $target; $shortcut.IconLocation=$target + ',0'; $shortcut.Save()"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; try { $target=$env:SHORTCUT_TARGET; $name=$env:SHORTCUT_NAME_ENV; $desktop=[Environment]::GetFolderPath('Desktop'); $shortcutPath=Join-Path $desktop ($name + '.lnk'); $shell=New-Object -ComObject WScript.Shell; $shortcut=$shell.CreateShortcut($shortcutPath); $shortcut.TargetPath=$target; $shortcut.WorkingDirectory=Split-Path -Parent $target; $shortcut.IconLocation=$target + ',0'; $shortcut.Save() } catch { Write-Host ('Cannot create desktop shortcut: ' + $_.Exception.Message); exit 1 }"
 if errorlevel 1 goto shortcut_failed
 
 echo.
@@ -240,27 +243,45 @@ echo.
 pause
 exit /b 0
 
+:powershell_missing
+echo.
+echo PowerShell was not found.
+echo This installer needs the built-in Windows powershell.exe to show dialogs,
+echo extract the archive, copy files and create the desktop shortcut.
+echo.
+echo Enable Windows PowerShell or run the installer on a standard Windows system.
+goto fail
+
 :extract_prepare_failed
 echo.
 echo Cannot create temporary extraction folder:
 echo %TEMP_EXTRACT%
+echo.
+echo Check that the TEMP folder exists and is writable:
+echo %TEMP%
 goto fail
 
 :extract_failed
 echo.
 echo Cannot extract archive:
 echo %ARCHIVE_PATH%
+echo.
+echo Check that the archive exists, is not damaged, and is not blocked by Windows.
 goto fail
 
 :exe_not_found
 echo.
 echo The archive does not contain %EXE_NAME%.
+echo.
+echo The archive must contain the compiled application folder or %EXE_NAME%.
 goto fail
 
 :target_prepare_failed
 echo.
 echo Cannot create target folder:
 echo %TARGET_DIR%
+echo.
+echo Check write permissions for this location.
 goto fail
 
 :target_inside_source
@@ -274,18 +295,31 @@ goto fail
 
 :copy_failed
 echo.
-echo Cannot copy app files. Copy exit code: %COPY_CODE%
+echo Cannot copy app files.
+echo Source:
+echo %SOURCE_DIR%
+echo Target:
+echo %TARGET_DIR%
+echo.
+echo Copy exit code: %COPY_CODE%
+echo Check write permissions, free disk space, path length, and locked files.
 goto fail
 
 :installed_exe_not_found
 echo.
 echo Installed executable was not found:
 echo %TARGET_EXE%
+echo.
+echo The copy or extraction completed, but the main exe is missing.
 goto fail
 
 :shortcut_failed
 echo.
 echo App files were copied, but the desktop shortcut was not created.
+echo Target:
+echo %TARGET_EXE%
+echo.
+echo Check access to the Desktop folder.
 goto fail
 
 :fail
