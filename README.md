@@ -71,14 +71,21 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python app/main.py
 ~/.local/state/yadisk_uploader/app.log
 ```
 
-Компиляция:
+Компиляция для Windows:
 
-```bash
- pyinstaller --clean --windowed --name YadiskUploader ^
-   --collect-submodules=yadisk ^
-   --hidden-import=numpy ^
-   --hidden-import=pygame ^
-   --hidden-import=matplotlib ^
-   --add-data "app/config/config.json;config" ^
-   app/main.py
+```cmd
+pyinstaller --clean --windowed --name YadiskUploader ^
+  --contents-directory . ^
+  --collect-submodules=yadisk ^
+  --hidden-import=numpy ^
+  --hidden-import=pygame ^
+  --hidden-import=matplotlib ^
+  --add-data "app/config/config.json;config" ^
+  --add-data "install_yadisk_uploader.bat;." ^
+  app/main.py
 ```
+
+После сборки `install_yadisk_uploader.bat` будет лежать рядом с
+`dist\YadiskUploader\YadiskUploader.exe`. Его можно запускать из этой папки
+или положить рядом с архивом `YadiskUploader.zip`; скрипт предложит папку
+установки, распакует/скопирует приложение и создаст ярлык на рабочем столе.
