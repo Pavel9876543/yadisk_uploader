@@ -74,18 +74,45 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python app/main.py
 Компиляция для Windows:
 
 ```cmd
+build_windows.bat
+```
+
+Скрипт собирает onedir-пакет PyInstaller с каталогом зависимостей
+`_internal`, копирует `install_yadisk_uploader.bat` рядом с основным exe,
+проверяет, что в корне `dist\YadiskUploader` остались только:
+
+```text
+YadiskUploader.exe
+install_yadisk_uploader.bat
+_internal\
+```
+
+Также создаются:
+
+```text
+dist\YadiskUploader.zip
+dist\install_yadisk_uploader.bat
+```
+
+Их можно передать пользователю вместе. Пользователь запускает
+`install_yadisk_uploader.bat`; скрипт через стандартные окна Windows
+предложит место установки и имя папки, по умолчанию равное названию архива,
+распакует/скопирует приложение и создаст ярлык на рабочем столе с названием
+основного exe.
+
+Ручная команда PyInstaller, если сборочный bat не используется:
+
+```cmd
 pyinstaller --clean --windowed --name YadiskUploader ^
-  --contents-directory . ^
+  --contents-directory _internal ^
   --collect-submodules=yadisk ^
   --hidden-import=numpy ^
   --hidden-import=pygame ^
   --hidden-import=matplotlib ^
   --add-data "app/config/config.json;config" ^
-  --add-data "install_yadisk_uploader.bat;." ^
   app/main.py
 ```
 
-После сборки `install_yadisk_uploader.bat` будет лежать рядом с
-`dist\YadiskUploader\YadiskUploader.exe`. Его можно запускать из этой папки
-или положить рядом с архивом `YadiskUploader.zip`; скрипт предложит папку
-установки, распакует/скопирует приложение и создаст ярлык на рабочем столе.
+После ручной сборки нужно отдельно скопировать
+`install_yadisk_uploader.bat` в `dist\YadiskUploader\` и, если нужен
+архивный установщик, положить копию bat рядом с `YadiskUploader.zip`.
