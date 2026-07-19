@@ -70,3 +70,15 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python app/main.py
 ```text
 ~/.local/state/yadisk_uploader/app.log
 ```
+
+Компиляция:
+
+```bash
+ pyinstaller --clean --windowed --name YadiskUploader ^
+   --collect-submodules=yadisk ^
+   --hidden-import=numpy ^
+   --hidden-import=pygame ^
+   --hidden-import=matplotlib ^
+   --add-data "app/config/config.json;config" ^
+   app/main.py
+```

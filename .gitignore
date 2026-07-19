@@ -2,3 +2,6 @@
 .venv/
 .idea
 __pycache__/
+YadiskUploader.spec
+build/
+dist/
